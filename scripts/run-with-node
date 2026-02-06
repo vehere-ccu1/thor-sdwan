@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Optional: use a specific Node/npm when system npm is broken.
+# Set NODE_DIR to your Node bin directory, or edit the default below.
+NODE_DIR="${NODE_DIR:-/usr/local/bin/opensite/local/node/bin}"
+if [ -x "$NODE_DIR/node" ] && [ -x "$NODE_DIR/npm" ]; then
+  export PATH="$NODE_DIR:$PATH"
+fi

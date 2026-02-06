@@ -1,0 +1,174 @@
+I have alread api and I want to develop gui for it and I want to use react for this.
+setup the gui for the react keeping in mind that:
+1. All the source code should be in src folder of the gui directory.
+2. create a theme.js/ts file which will keep all the GUI themes like font, font-color,
+ type-of-button, main-page-header back ground, there will be a side menu items (right side slide panel) and a main-page-header, it will starts with login page.
+3. Name of the product/company is also saved in the theme file.  Give the product name = "SD-WAN-CMS" and "R & D".
+4. Any icons used in the GUI should be of same color mentioned in the theme.ts/js file.
+5. The Right-Slide-Main-Manu items would be:
+    a. Home
+    b. Account
+        i. Profile
+        ii. Organizations
+        iii. Billing
+        iv. Access Key
+    c. Users
+    d. Inventory
+        i. Devices
+        ii. Tunnels
+        iii. Peers
+        iv. Tokens
+        v. Path Labels
+        vi. Traffic App Identification
+    e. Traffic Optimization
+        i. Path Selections
+    f. Security
+        i. Firewall
+    g. Dhashboards
+        i. Network
+        ii. Traffic
+    h. Troubleshoot
+        i. Job
+        ii. Notification
+    i. About
+
+make the Right-Slide-Main-Manu to left-Slide-Menu
+
+
+Acount Profile
+    There should be option to add/update/delete records and each record must have the fields:
+    1. Company Name (Text)
+    2. Country (Text Drop-Down List All a2-country-code with the country flag icon)
+    3. Notifications (boolean)
+    Every record can be shown either grid-view or label/ticket view.
+     Use a button to toggle from Grid-View to Ticket-View and vice versa.
+
+ Acount Organizations
+     There should be option to add/update/delete records and each record must have the fields:
+     1. Name
+     2. Group
+     3. Tunnel Key Exchange Method
+     4. Action [Set-Default]
+     Every record can be shown either grid-view or label/ticket view.
+     Use a button to toggle from Grid-View to Ticket-View and vice versa.
+    (Try to use global look-and-feel for the Data-Grids and the ticket-view)
+
+Users
+    There should be option to add/update/delete records and each record must have the fields:
+    1. Name
+    2. Email
+    3. Permission To (Account/Organization)
+    4. Entity
+    5. Role (Owner/Manager)
+    6. Action (Enable/Reset-Password/)
+    (Try to use global look-and-feel for the Data-Grids and the ticket-view)
+
+Make all the "Add" (Create new) pannel as Collapse/Expand with "+" option in all the pages.
+
+Add Dark-Mode & Light-Mode option in the Main-Menu. Every page and modules (created or to be created) must follow the modes.
+
+Do not use APPEARANCE Use on one Item and let it be toggle from "Dark-Mode" to "Light-Mode" vise versa.
+
+CLicking on Dark-Mode nothing is hapenning, Expand the SUB-MENU a littile right position from the MAIN-MENUs
+
+
+Inventory - Traffic App Identification
+    Manual App Identifiers
+        Create Button -> New App Identification
+        Data-Grid
+        1. Name
+        2. Description
+        3. Category
+        4. Service Class
+        5. Importance
+        6. Action [Update/Delete]
+
+    Predefine- App Identifieres in Data-Grid.    
+        Data-Grid
+        1. Name
+        2. Description
+        3. Category
+        4. Service Class
+        5. Importance
+        6. Action [Update/Refresh]
+
+Inventory-Devices
+    There will be a TAB-Pannel with following tabs
+    1. General
+    2. Interfaces
+    3. DHCP
+    4. Routing
+    5. Policies
+    6. Static Routes
+    7. Apps
+    8. Logs
+    9. Packet Traces
+    10. Configuration
+    11. Command
+Latter I will tell about each tabs    
+
+Rename the Menu-button Security -> Firewall to Security -> Organization Firewall Policies
+
+
+Security -> Organization Firewall Policies
+Header: Firewall Policy with a prominent “Save & Update Devices” button & Search Bard used in "Inventory – Tunnels"
+
+Outbound rules table with columns:
+Name
+Destination
+Source (all set to * Any)
+Action (all set to Deny, shown with a red blocked icon)
+Description (empty)
+Rule Actions (icons for edit, enable/disable, move up/down, delete)
+
+Inbound rules section: A separate table labeled Inbound rules, but it displays:
+Name
+Destination
+Source (all set to * Any)
+Action (all set to Deny, shown with a red blocked icon)
+Description (empty)
+Rule Actions (icons for edit, enable/disable, move up/down, delete)
+
+Just Beside "Outbound rules" and "Inbound rules" Lables add a Create (+) button which will expand a panel for new entry
+The Panel will contains following controlls:
+1. Enabled
+2. Description
+3. App/Destination
+4. Source
+5. Multi IP Address Range (By clicking+ another entry option should be there)
+6. Protocols
+7. Multi Port Ranges(By clicking+ another entry option should be there)
+8. Interfaces
+9. Action (Allow/Deny)
+
+Can you please rearrange the "Outbound rules" and "Inbound rules" add-new Panel's controls,
+ it is taking too much page size (height) use multiple controls in same line.
+
+Also the + button should become - if we click on this and vice versa. 
+Where is the Grid/Ticket view option? It should be there in every page where Data-Grid is used.
+
+Inventory-Devices-Commands Panel should have:
+    Command Name (Text)
+    Command (Text Area)
+    Output (Text Area with none-editable and copy option)
+    Button (Run Command)
+    Improve Inventory-Devices-Commands, increase the width of the Text-Area. Use copy icon inside text-area at right-top.
+
+Inventory-Devices-General Panel should have:
+    Device Name (Text)
+    Description (Text Area)
+    Approves (boolean)
+    Host Name (Text Field, None Editable)
+    Serial Number (Text Field, None Editable)
+    Machine ID (Text Field, None Editable)    
+    Devive Version (Text Field, None Editable)
+    GIS MAP Widget to show the device location
+
+Inventory-Devices-Packet-Trace Panel should have:
+    Total Packets (Text Field allow between 5 - 65k)
+    Capture Duration: (Text Field (Allow 5 sec to 10 seconds))
+    Trace (Button) [All three should be in same line]
+    A Text-Search Field to search keywords in the Text-Area
+    A Readonly Text-Area which will contains the dissected packet informations once the Trace button is clicked.
+
+Use Seperate jsx file for every tab panels in the  Inventory-Devices.
