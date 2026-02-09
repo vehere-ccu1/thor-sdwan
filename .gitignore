@@ -4,6 +4,9 @@ node_modules/
 # Python
 venv/
 .venv/
+vdev/
+api/vdev/
+agent/vdev/
 __pycache__/
 *.py[cod]
 *$py.class

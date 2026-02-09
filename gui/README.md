@@ -2,6 +2,8 @@
 
 React UI for the SD-WAN CMS API. All source code lives in `src/`.
 
+Dependencies (React, Vite, react-router-dom) use permissive licenses (MIT) and are free for commercial use. See project root `DEPENDENCIES.md` for the full list.
+
 ## Setup
 
 ```bash

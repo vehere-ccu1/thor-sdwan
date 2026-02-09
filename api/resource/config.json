@@ -1,0 +1,14 @@
+{
+  "api_host": "0.0.0.0",
+  "api_port": 3443,
+  "api_prefix": "/sdwan_cms_api",
+  "product": "SD-WAN-CMS",
+  "company": "R & D",
+  "clickhouse_host": "localhost",
+  "clickhouse_port": "9000",
+  "clickhouse_database": "sdwan_cms",
+  "clickhouse_user": "default",
+  "clickhouse_password": "pk@123",
+  "audit_log_retention_in_days": 30,
+  "log_path": "/var/log/sdwan_cms_api"
+}

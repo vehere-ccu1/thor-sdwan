@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
+import { login as apiLogin } from '../api/client';
 
 export default function Login({ onLogin }) {
   const { theme: t } = useTheme();
@@ -68,17 +69,26 @@ export default function Login({ onLogin }) {
       marginTop: 8,
     },
     error: { fontSize: t.fontSize.sm, color: t.color.error, marginTop: 8 },
+    links: { marginTop: 20, display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center' },
+    link: { color: t.color.primary, fontSize: t.fontSize.sm, textDecoration: 'none' },
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     if (!username.trim() || !password) {
       setError('Please enter username and password.');
       return;
     }
-    onLogin?.({ username, password });
-    navigate('/', { replace: true });
+    const res = await apiLogin({ email: username.trim(), password });
+    if (res?.ok && res?.user_id) {
+      sessionStorage.setItem('sdwan_cms_user_id', res.user_id);
+      if (res.email) sessionStorage.setItem('sdwan_cms_user_email', res.email);
+      onLogin?.({ username, password });
+      navigate('/', { replace: true });
+    } else {
+      setError(res?.detail || 'Invalid email or password.');
+    }
   };
 
   return (
@@ -107,6 +117,10 @@ export default function Login({ onLogin }) {
           <button type="submit" style={styles.button}>
             Sign in
           </button>
+          <div style={styles.links}>
+            <Link to="/forgot-password" style={styles.link}>Forgot Password</Link>
+            <Link to="/create-account" style={styles.link}>Create account</Link>
+          </div>
         </form>
       </div>
     </div>

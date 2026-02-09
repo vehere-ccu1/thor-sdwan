@@ -48,24 +48,26 @@ export default function MainLayout({ onLogout }) {
   return (
     <div style={layoutStyle}>
       <header style={headerStyle}>
-        <button
-          type="button"
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'inherit',
-            cursor: 'pointer',
-            padding: 8,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          onClick={() => setMenuOpen(!menuOpen)}
-          aria-label="Toggle menu"
-        >
-          <IconMenu size={24} />
-        </button>
-        <span>{theme.productName}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            type="button"
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'inherit',
+              cursor: 'pointer',
+              padding: 8,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            onClick={() => setMenuOpen(!menuOpen)}
+            aria-label="Toggle menu"
+          >
+            <IconMenu size={24} />
+          </button>
+          <span>{theme.productName}</span>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <span style={{ opacity: 0.8, fontSize: theme.fontSize.sm }}>{theme.companyName}</span>
           <button

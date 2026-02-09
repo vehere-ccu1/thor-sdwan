@@ -1,0 +1,7 @@
+# Thor SD-WAN CMS – API (runs on API server)
+# All deps: permissive licenses (MIT/BSD/Apache-2.0), free for commercial use. See project DEPENDENCIES.md.
+# Create venv: python3 -m venv vdev && source vdev/bin/activate && pip install -r requirements.txt
+
+clickhouse-driver>=0.2.6
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0

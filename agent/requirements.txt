@@ -1,0 +1,9 @@
+# Thor SD-WAN CMS – Agent (runs on remote machines)
+# All deps: permissive licenses (MIT/Apache-2.0), free for commercial use. See project DEPENDENCIES.md.
+# Create venv: python3 -m venv vdev && source vdev/bin/activate && pip install -r requirements.txt
+
+# Talk to CMS API
+requests>=2.31.0
+
+# Optional: local ClickHouse if agent buffers/caches
+# clickhouse-driver>=0.2.6

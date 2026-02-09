@@ -8,7 +8,9 @@ export const menuItems = [
     label: 'Account',
     children: [
       { path: '/account/profile', label: 'Profile' },
+      { path: '/account/about', label: 'About Accounts' },
       { path: '/account/organizations', label: 'Organizations' },
+      { path: '/account/configuration', label: 'Configuration' },
       { path: '/account/billing', label: 'Billing' },
       { path: '/account/access-key', label: 'Access Key' },
     ],
@@ -18,6 +20,7 @@ export const menuItems = [
     label: 'Inventory',
     children: [
       { path: '/inventory/devices', label: 'Devices' },
+      { path: '/inventory/device-configuration', label: 'Device Configuration' },
       { path: '/inventory/tunnels', label: 'Tunnels' },
       { path: '/inventory/peers', label: 'Peers' },
       { path: '/inventory/tokens', label: 'Tokens' },
@@ -35,6 +38,7 @@ export const menuItems = [
     label: 'Security',
     children: [
       { path: '/security/firewall', label: 'Organization Firewall Policies' },
+      { path: '/security/audit-trail', label: 'Audit Trail' },
     ],
   },
   {

@@ -1,0 +1,190 @@
+"""
+Ensure ClickHouse schema exists on API startup.
+Reads SQL files from the project db/ folder (01–06) and runs them in order.
+Tables/views use IF NOT EXISTS or ADD COLUMN IF NOT EXISTS; seed (05) runs only if no users exist.
+"""
+import logging
+import os
+import re
+
+from config import CLICKHOUSE_DATABASE
+from db import get_client, get_client_default_db
+
+logger = logging.getLogger(__name__)
+
+# SQL files in order (01–04 are DDL; 05 is seed, run only when empty). 06 is applied in code (idempotent).
+SCHEMA_FILES = [
+    "01_schema.sql",
+    "02_schema_accounts.sql",
+    "03_schema_roles_permissions.sql",
+    "04_schema_tokens.sql",
+]
+SEED_FILE = "05_seed_admin.sql"
+
+
+def _db_folder() -> str:
+    """Path to project db/ folder (parent of api/)."""
+    api_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(api_dir, "..", "db")
+
+
+def _split_sql_statements(content: str) -> list[str]:
+    """Split SQL content into single statements. Statements end with ; at end of line."""
+    statements = []
+    buffer: list[str] = []
+    for line in content.splitlines():
+        buffer.append(line)
+        if line.strip().endswith(";"):
+            stmt = "\n".join(buffer).strip()
+            buffer = []
+            if not stmt:
+                continue
+            # Strip trailing semicolon for execute
+            stmt = stmt[:-1].strip()
+            # Skip comment-only blocks
+            if re.match(r"^(\s*--[^\n]*\s*)+$", stmt, re.DOTALL):
+                continue
+            if stmt:
+                statements.append(stmt)
+    if buffer:
+        stmt = "\n".join(buffer).strip()
+        if stmt and not re.match(r"^(\s*--[^\n]*\s*)+$", stmt, re.DOTALL):
+            stmt = stmt.rstrip(";").strip()
+            if stmt:
+                statements.append(stmt)
+    return statements
+
+
+def _run_sql_file(client, path: str) -> None:
+    """Execute each statement in the SQL file. Logs and skips on error so other statements still run."""
+    if not os.path.isfile(path):
+        logger.warning("Schema file not found: %s", path)
+        return
+    with open(path, encoding="utf-8") as f:
+        content = f.read()
+    for stmt in _split_sql_statements(content):
+        try:
+            client.execute(stmt)
+        except Exception as e:
+            logger.warning("Schema statement failed (%s): %s", path, e)
+
+
+def _table_exists(client, table_name: str) -> bool:
+    """Return True if the table exists in the configured database."""
+    try:
+        q = "SELECT 1 FROM system.tables WHERE database = %(db)s AND name = %(name)s LIMIT 1"
+        rows = client.execute(q, {"db": CLICKHOUSE_DATABASE, "name": table_name})
+        return bool(rows)
+    except Exception:
+        return False
+
+
+def _column_exists(client, table_name: str, column_name: str) -> bool:
+    """Return True if the column exists on the table (ClickHouse 18.x has no ADD COLUMN IF NOT EXISTS)."""
+    try:
+        q = "SELECT 1 FROM system.columns WHERE database = %(db)s AND table = %(table)s AND name = %(name)s LIMIT 1"
+        rows = client.execute(q, {"db": CLICKHOUSE_DATABASE, "table": table_name, "name": column_name})
+        return bool(rows)
+    except Exception:
+        return False
+
+
+def _ensure_accounts_columns(client) -> None:
+    """Add account_id, group_id to organizations and account_id, is_owner to users if missing (ClickHouse 18.x)."""
+    default_uuid = "toUUID('00000000-0000-0000-0000-000000000000')"
+    if _table_exists(client, "organizations"):
+        t = f"{CLICKHOUSE_DATABASE}.organizations"
+        if not _column_exists(client, "organizations", "account_id"):
+            try:
+                client.execute(f"ALTER TABLE {t} ADD COLUMN account_id UUID DEFAULT {default_uuid}")
+            except Exception as e:
+                logger.warning("Could not add organizations.account_id: %s", e)
+        if not _column_exists(client, "organizations", "group_id"):
+            try:
+                client.execute(f"ALTER TABLE {t} ADD COLUMN group_id UUID DEFAULT {default_uuid}")
+            except Exception as e:
+                logger.warning("Could not add organizations.group_id: %s", e)
+    if _table_exists(client, "users"):
+        t = f"{CLICKHOUSE_DATABASE}.users"
+        if not _column_exists(client, "users", "account_id"):
+            try:
+                client.execute(f"ALTER TABLE {t} ADD COLUMN account_id UUID DEFAULT {default_uuid}")
+            except Exception as e:
+                logger.warning("Could not add users.account_id: %s", e)
+        if not _column_exists(client, "users", "is_owner"):
+            try:
+                client.execute(f"ALTER TABLE {t} ADD COLUMN is_owner UInt8 DEFAULT 0")
+            except Exception as e:
+                logger.warning("Could not add users.is_owner: %s", e)
+
+
+def _ensure_audit_trail_columns(client) -> None:
+    """Add account_id and organization_id to audit_trail if missing (idempotent for ClickHouse 18.x)."""
+    if not _table_exists(client, "audit_trail"):
+        return
+    table = f"{CLICKHOUSE_DATABASE}.audit_trail"
+    default_uuid = "toUUID('00000000-0000-0000-0000-000000000000')"
+    if not _column_exists(client, "audit_trail", "account_id"):
+        try:
+            client.execute(f"ALTER TABLE {table} ADD COLUMN account_id UUID DEFAULT {default_uuid}")
+        except Exception as e:
+            logger.warning("Could not add audit_trail.account_id: %s", e)
+    if not _column_exists(client, "audit_trail", "organization_id"):
+        try:
+            client.execute(f"ALTER TABLE {table} ADD COLUMN organization_id UUID DEFAULT {default_uuid}")
+        except Exception as e:
+            logger.warning("Could not add audit_trail.organization_id: %s", e)
+
+
+def _has_any_users(client) -> bool:
+    """Return True if the users table exists and has at least one row."""
+    if not _table_exists(client, "users"):
+        return False
+    try:
+        q = f"SELECT 1 FROM {CLICKHOUSE_DATABASE}.users LIMIT 1"
+        rows = client.execute(q)
+        return bool(rows)
+    except Exception:
+        return False
+
+
+def _ensure_database() -> None:
+    """Create the configured database if it does not exist. Uses 'default' DB connection so it works when target DB is missing."""
+    try:
+        client = get_client_default_db()
+        client.execute(f"CREATE DATABASE IF NOT EXISTS {CLICKHOUSE_DATABASE}")
+    except Exception as e:
+        logger.warning("Could not create database %s: %s", CLICKHOUSE_DATABASE, e)
+
+
+def ensure_schema() -> None:
+    """
+    Ensure database and tables exist. Call on API startup.
+    Creates the database first (using default DB connection), then runs 01–04 and 06; runs 05 (seed) only if no users exist.
+    """
+    folder = _db_folder()
+    if not os.path.isdir(folder):
+        logger.warning("db folder not found: %s; skipping schema sync", folder)
+        return
+    _ensure_database()
+    try:
+        client = get_client()
+    except Exception as e:
+        logger.warning("Could not connect to ClickHouse for schema sync: %s", e)
+        return
+    for name in SCHEMA_FILES:
+        path = os.path.join(folder, name)
+        logger.info("Applying schema: %s", name)
+        if name == "02_schema_accounts.sql":
+            _ensure_accounts_columns(client)
+        _run_sql_file(client, path)
+    _ensure_audit_trail_columns(client)
+    if _table_exists(client, "users") and not _has_any_users(client):
+        path = os.path.join(folder, SEED_FILE)
+        logger.info("Applying seed (no users): %s", SEED_FILE)
+        _run_sql_file(client, path)
+    elif not _table_exists(client, "users"):
+        logger.warning("Seed skipped: users table does not exist (schema 01 may have failed)")
+    else:
+        logger.debug("Seed skipped (users already exist)")
+    logger.info("Schema sync completed")

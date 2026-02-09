@@ -1,15 +1,15 @@
 # Scripts
 
-- **api_start.sh** / **api_start.bat** – start the API (backend)
+- **api_start.sh** / **api_start.bat** – start the API (Python FastAPI with uvicorn on port 3443). Requires `api/vdev` (run `cd api && ./setup_vdev.sh` first). Optional env: `CLICKHOUSE_HOST`, `CLICKHOUSE_PORT`.
 - **gui_start.sh** / **gui_start.bat** – start the GUI (Vite dev server)
 
-## If npm fails (e.g. "Cannot find module .../npm-prefix.js")
+## If npm fails for the GUI (e.g. "Cannot find module .../npm-prefix.js")
 
-Your system npm may be broken. Use a working Node/npm:
+Your system npm may be broken. Use a working Node/npm for the GUI only:
 
 1. **Option A – `run-with-node`**  
-   Edit `scripts/run-with-node` and set `NODE_DIR` to the directory that contains your working `node` and `npm` (e.g. from nvm: `~/.nvm/versions/node/v18.19.0/bin`, or your opensite install).  
-   Both `gui_start.sh` and `api_start.sh` source this file when present.
+   Edit `scripts/run-with-node` and set `NODE_DIR` to the directory that contains your working `node` and `npm`.  
+   `gui_start.sh` sources this file when present.
 
 2. **Option B – environment variable**  
    Set `NODE_DIR` before running:

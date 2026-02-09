@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import { getDataPageStyles } from '../../styles/dataPageStyles';
 import { countries, getFlagEmoji } from '../../data/countries';
 import CollapsibleAddPanel from '../../components/CollapsibleAddPanel';
+import { fetchAccounts, createAccount, updateAccount } from '../../api/client';
 
 function nextId() {
   return String(Date.now());
@@ -16,53 +17,83 @@ export default function Profile() {
     flag: { fontSize: '1.5rem' },
   };
   const [records, setRecords] = useState([]);
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'ticket'
+  const [viewMode, setViewMode] = useState('grid');
   const [addPanelExpanded, setAddPanelExpanded] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({
-    companyName: '',
+    name: '',
+    billing_email: '',
     country: '',
     notifications: false,
   });
 
   const resetForm = () => {
-    setForm({ companyName: '', country: '', notifications: false });
+    setForm({ name: '', billing_email: '', country: '', notifications: false });
     setEditingId(null);
   };
+
+  useEffect(() => {
+    fetchAccounts().then((list) => setRecords(Array.isArray(list) ? list : []));
+  }, []);
 
   const handleEdit = (rec) => {
     setEditingId(rec.id);
     setForm({
-      companyName: rec.companyName,
+      name: rec.name || '',
+      billing_email: rec.billing_email || '',
       country: rec.country || '',
-      notifications: rec.notifications,
+      notifications: !!rec.notifications,
     });
     setAddPanelExpanded(true);
   };
 
-  const handleAdd = () => {
-    if (!form.companyName.trim()) return;
-    setRecords((prev) => [
-      ...prev,
-      { id: nextId(), companyName: form.companyName.trim(), country: form.country || null, notifications: !!form.notifications },
-    ]);
-    resetForm();
+  const handleAdd = async () => {
+    if (!form.billing_email.trim()) return;
+    const res = await createAccount({
+      name: form.name.trim() || form.billing_email.trim(),
+      billing_email: form.billing_email.trim(),
+    });
+    if (res) {
+      fetchAccounts().then((list) => setRecords(Array.isArray(list) ? list : []));
+      resetForm();
+    } else {
+      setRecords((prev) => [
+        ...prev,
+        {
+          id: nextId(),
+          name: form.name.trim() || form.billing_email.trim(),
+          billing_email: form.billing_email.trim(),
+          country: form.country || null,
+          notifications: form.notifications,
+        },
+      ]);
+      resetForm();
+    }
   };
 
-  const handleUpdate = () => {
-    if (!editingId || !form.companyName.trim()) return;
-    setRecords((prev) =>
-      prev.map((r) =>
-        r.id === editingId
-          ? { ...r, companyName: form.companyName.trim(), country: form.country || null, notifications: !!form.notifications }
-          : r
-      )
-    );
-    resetForm();
+  const handleUpdate = async () => {
+    if (!editingId || !form.billing_email.trim()) return;
+    const res = await updateAccount(editingId, {
+      name: form.name.trim() || form.billing_email.trim(),
+      billing_email: form.billing_email.trim(),
+    });
+    if (res) {
+      fetchAccounts().then((list) => setRecords(Array.isArray(list) ? list : []));
+      resetForm();
+    } else {
+      setRecords((prev) =>
+        prev.map((r) =>
+          r.id === editingId
+            ? { ...r, name: form.name.trim(), billing_email: form.billing_email.trim(), country: form.country || null, notifications: form.notifications }
+            : r
+        )
+      );
+      resetForm();
+    }
   };
 
   const handleDelete = (id) => {
-    if (window.confirm('Delete this record?')) setRecords((prev) => prev.filter((r) => r.id !== id));
+    if (window.confirm('Delete this account?')) setRecords((prev) => prev.filter((r) => r.id !== id));
   };
 
   const countryName = (code) => countries.find((c) => c.code === code)?.name || code || '—';
@@ -83,18 +114,28 @@ export default function Profile() {
       </div>
 
       <CollapsibleAddPanel
-        title={editingId ? 'Edit record' : 'Create new'}
+        title={editingId ? 'Edit account' : 'Create new account'}
         expanded={addPanelExpanded}
         onToggle={() => setAddPanelExpanded((v) => !v)}
       >
         <div style={styles.formRow}>
-          <label style={styles.label}>Company Name</label>
+          <label style={styles.label}>Company / Account name</label>
           <input
             type="text"
-            value={form.companyName}
-            onChange={(e) => setForm((f) => ({ ...f, companyName: e.target.value }))}
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             style={styles.input}
-            placeholder="Company name"
+            placeholder="Company or account name"
+          />
+        </div>
+        <div style={styles.formRow}>
+          <label style={styles.label}>Billing email</label>
+          <input
+            type="email"
+            value={form.billing_email}
+            onChange={(e) => setForm((f) => ({ ...f, billing_email: e.target.value }))}
+            style={styles.input}
+            placeholder="Email for billing and account owner"
           />
         </div>
         <div style={styles.formRow}>
@@ -142,18 +183,20 @@ export default function Profile() {
       </CollapsibleAddPanel>
 
       {records.length === 0 ? (
-        <p style={styles.empty}>No records. Add one above.</p>
+        <p style={styles.empty}>No accounts. Create one above (billing email = account identity).</p>
       ) : viewMode === 'grid' ? (
         <>
           <div style={{ ...styles.grid, ...styles.gridHeader }}>
-            <span>Company Name</span>
+            <span>Company / Account name</span>
+            <span>Billing email</span>
             <span>Country</span>
             <span>Notifications</span>
             <span>Actions</span>
           </div>
           {records.map((r) => (
             <div key={r.id} style={styles.grid}>
-              <span>{r.companyName}</span>
+              <span>{r.name || '—'}</span>
+              <span>{r.billing_email || '—'}</span>
               <span>
                 <span style={styles.flag}>{getFlagEmoji(r.country)}</span> {countryName(r.country)}
               </span>
@@ -175,7 +218,8 @@ export default function Profile() {
             <div key={r.id} style={styles.ticketCard}>
               <div style={styles.ticketMain}>
                 <span style={styles.flag}>{getFlagEmoji(r.country)}</span>
-                <strong>{r.companyName}</strong>
+                <strong>{r.name || r.billing_email}</strong>
+                <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>{r.billing_email}</span>
                 <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>{countryName(r.country)}</span>
                 <span style={{ fontSize: t.fontSize.sm }}>{r.notifications ? 'Notifications on' : 'Notifications off'}</span>
               </div>
