@@ -6,6 +6,7 @@ On startup, missing tables are created by running SQL from the project db/ folde
 """
 import logging
 import os
+import threading
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -46,11 +47,22 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup():
-    """Ensure ClickHouse schema exists (create missing tables from db/*.sql)."""
-    try:
-        ensure_schema()
-    except Exception as e:
-        logger.warning("Schema sync on startup failed (API will still run): %s", e)
+    """
+    Kick off ClickHouse schema sync.
+
+    IMPORTANT: do not block API startup on ClickHouse availability. If ClickHouse
+    is down/unreachable, schema sync can take timeouts; the API should still
+    start and return proper HTTP errors (instead of failing to accept
+    connections and causing ERR_EMPTY_RESPONSE in the UI).
+    """
+
+    def _run_schema_sync():
+        try:
+            ensure_schema()
+        except Exception as e:
+            logger.warning("Schema sync failed (API will still run): %s", e)
+
+    threading.Thread(target=_run_schema_sync, name="schema-sync", daemon=True).start()
 
 
 @app.get(f"{PREFIX}/health")

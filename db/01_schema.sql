@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS sdwan_cms.users
     entity_id     String,   -- org/tenant scope
     enabled       UInt8 DEFAULT 1,
     created_at    DateTime DEFAULT now(),
-    updated_at    DateTime DEFAULT now()
+    updated_at    DateTime DEFAULT now(),
+    job_title     String DEFAULT ''
 ) ENGINE = ReplacingMergeTree(updated_at)
   ORDER BY (email, id);
 
@@ -44,6 +45,7 @@ SELECT
     u.enabled,
     u.created_at,
     u.updated_at,
+    u.job_title,
     r.name AS role_name,
     r.permissions
 FROM (SELECT * FROM sdwan_cms.users FINAL) u

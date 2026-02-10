@@ -12,6 +12,16 @@ INSERT INTO sdwan_cms.roles (id, name, description, permissions)
 VALUES (toUUID('22222222-2222-2222-2222-222222222222'), 'Owner', 'Account owner', '["*"]')
 SETTINGS insert_quorum = 0;
 
+-- Manager role
+INSERT INTO sdwan_cms.roles (id, name, description, permissions)
+VALUES (toUUID('44444444-4444-4444-4444-444444444444'), 'Manager', 'Manager', '["users:read","devices:read","devices:write"]')
+SETTINGS insert_quorum = 0;
+
+-- Viewer role
+INSERT INTO sdwan_cms.roles (id, name, description, permissions)
+VALUES (toUUID('55555555-5555-5555-5555-555555555555'), 'Viewer', 'Viewer', '["users:read","devices:read"]')
+SETTINGS insert_quorum = 0;
+
 -- Admin user: email=admin, password=admin, password_hash = hex(SHA256('admin'))
 INSERT INTO sdwan_cms.users (id, account_id, email, name, password_hash, role_id, is_owner, enabled)
 VALUES (

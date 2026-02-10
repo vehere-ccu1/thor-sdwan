@@ -148,3 +148,13 @@ export function IconCopy({ size = 20, ...props }) {
     </svg>
   );
 }
+
+/** Key / token icon for "Generate Token" action */
+export function IconKey({ size = 20, ...props }) {
+  const iconStyle = useIconStyle();
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...props} style={iconStyle}>
+      <path fill="currentColor" d="M12.65 10A5.99 5.99 0 0 0 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.64 0 4.9-1.69 5.74-4.04H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z" />
+    </svg>
+  );
+}

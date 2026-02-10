@@ -1,9 +1,11 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import { getDataPageStyles } from '../../styles/dataPageStyles';
+import { useNavigate } from 'react-router-dom';
 import {
   IconEdit,
   IconTrash,
+  IconKey,
   IconArrowUp,
   IconArrowDown,
   IconBlocked,
@@ -188,7 +190,7 @@ function NewRuleForm({ theme: t, s, onSubmit, onCancel }) {
   );
 }
 
-function RulesTable({ title, rows, allRows, setRows, theme: t, s, viewMode, addPanelExpanded, onToggleAddPanel, addPanelContent }) {
+function RulesTable({ title, rows, allRows, setRows, theme: t, s, viewMode, addPanelExpanded, onToggleAddPanel, addPanelContent, navigate }) {
   const move = (id, dir) => {
     const list = allRows ?? rows;
     const i = list.findIndex((r) => r.id === id);
@@ -264,7 +266,7 @@ function RulesTable({ title, rows, allRows, setRows, theme: t, s, viewMode, addP
                 </span>
                 <span style={{ color: t.color.textMuted }}>{r.description || '—'}</span>
                 <div style={{ ...s.actions, flexWrap: 'nowrap' }}>
-                  {ruleActionButtons(t, r, index, rows, allRows, move, toggleEnabled, remove)}
+                  {ruleActionButtons(t, r, index, rows, allRows, move, toggleEnabled, remove, navigate)}
                 </div>
               </div>
             );
@@ -289,7 +291,7 @@ function RulesTable({ title, rows, allRows, setRows, theme: t, s, viewMode, addP
                   {r.description ? <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>{r.description}</span> : null}
                 </div>
                 <div style={{ ...s.actions, flexWrap: 'nowrap' }}>
-                  {ruleActionButtons(t, r, index, rows, allRows, move, toggleEnabled, remove)}
+                  {ruleActionButtons(t, r, index, rows, allRows, move, toggleEnabled, remove, navigate)}
                 </div>
               </div>
             );
@@ -300,13 +302,16 @@ function RulesTable({ title, rows, allRows, setRows, theme: t, s, viewMode, addP
   );
 }
 
-function ruleActionButtons(t, r, index, rows, allRows, move, toggleEnabled, remove) {
+function ruleActionButtons(t, r, index, rows, allRows, move, toggleEnabled, remove, navigate) {
   const list = allRows ?? rows;
   const fullIndex = list.findIndex((x) => x.id === r.id);
   const canMoveUp = fullIndex > 0;
   const canMoveDown = fullIndex >= 0 && fullIndex < list.length - 1;
   return (
     <>
+      <button type="button" style={iconBtn(t)} title="Generate Token" aria-label="Generate Token" onClick={() => navigate('/inventory/tokens')}>
+        <IconKey size={18} />
+      </button>
       <button type="button" style={iconBtn(t)} title="Edit" aria-label="Edit">
         <IconEdit size={18} />
       </button>
@@ -339,6 +344,7 @@ function iconBtn(t) {
 
 export default function OrganizationFirewallPolicies() {
   const { theme: t } = useTheme();
+  const navigate = useNavigate();
   const s = getDataPageStyles(t);
   const [outbound, setOutbound] = useState(MOCK_OUTBOUND);
   const [inbound, setInbound] = useState(MOCK_INBOUND);
@@ -587,6 +593,7 @@ export default function OrganizationFirewallPolicies() {
         viewMode={viewMode}
         addPanelExpanded={outboundAddOpen}
         onToggleAddPanel={() => setOutboundAddOpen((v) => !v)}
+        navigate={navigate}
         addPanelContent={
           outboundAddOpen && (
             <NewRuleForm
@@ -611,6 +618,7 @@ export default function OrganizationFirewallPolicies() {
         viewMode={viewMode}
         addPanelExpanded={inboundAddOpen}
         onToggleAddPanel={() => setInboundAddOpen((v) => !v)}
+        navigate={navigate}
         addPanelContent={
           inboundAddOpen && (
             <NewRuleForm

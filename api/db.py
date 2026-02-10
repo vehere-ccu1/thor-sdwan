@@ -11,6 +11,11 @@ from clickhouse_driver.dbapi import connect
 
 from config import CLICKHOUSE_DATABASE, CLICKHOUSE_HOST, CLICKHOUSE_PASSWORD, CLICKHOUSE_PORT, CLICKHOUSE_USER
 
+# Keep ClickHouse waits bounded so API doesn't hang when DB is down.
+_CONNECT_TIMEOUT_SEC = 5
+_SEND_RECEIVE_TIMEOUT_SEC = 10
+_SYNC_REQUEST_TIMEOUT_SEC = 5
+
 # One Client per thread; clickhouse-driver Client must not be shared across threads.
 _local = threading.local()
 
@@ -23,7 +28,9 @@ def get_client() -> Client:
             database=CLICKHOUSE_DATABASE,
             user=CLICKHOUSE_USER,
             password=CLICKHOUSE_PASSWORD,
-            settings={"connect_timeout": 5},
+            connect_timeout=_CONNECT_TIMEOUT_SEC,
+            send_receive_timeout=_SEND_RECEIVE_TIMEOUT_SEC,
+            sync_request_timeout=_SYNC_REQUEST_TIMEOUT_SEC,
         )
     return _local.client
 
@@ -36,7 +43,9 @@ def get_client_default_db() -> Client:
         database="default",
         user=CLICKHOUSE_USER,
         password=CLICKHOUSE_PASSWORD,
-        settings={"connect_timeout": 5},
+        connect_timeout=_CONNECT_TIMEOUT_SEC,
+        send_receive_timeout=_SEND_RECEIVE_TIMEOUT_SEC,
+        sync_request_timeout=_SYNC_REQUEST_TIMEOUT_SEC,
     )
 
 
@@ -49,6 +58,9 @@ def connection():
         database=CLICKHOUSE_DATABASE,
         user=CLICKHOUSE_USER,
         password=CLICKHOUSE_PASSWORD,
+        connect_timeout=_CONNECT_TIMEOUT_SEC,
+        send_receive_timeout=_SEND_RECEIVE_TIMEOUT_SEC,
+        sync_request_timeout=_SYNC_REQUEST_TIMEOUT_SEC,
     )
     try:
         yield conn

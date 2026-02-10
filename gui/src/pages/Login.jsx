@@ -16,36 +16,35 @@ export default function Login({ onLogin }) {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: t.color.background,
+      // Shared auth background from theme
+      background: t.authBackground,
       fontFamily: t.fontFamily.sans,
+      padding: 24,
     },
     card: {
       background: t.color.surface,
-      padding: 32,
-      borderRadius: 8,
-      boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+      padding: 0,
+      borderRadius: 12,
+      boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
       width: '100%',
-      maxWidth: 360,
+      maxWidth: 380,
+      overflow: 'hidden',
+    },
+    header: {
+      background: t.widgetHeader.background,
+      color: t.widgetHeader.color,
+      padding: `${t.widgetHeader.paddingVertical}px ${t.widgetHeader.paddingHorizontal}px`,
+      textAlign: 'left',
     },
     title: {
-      margin: '0 0 8px',
-      fontSize: t.fontSize['2xl'],
-      fontWeight: 600,
-      color: t.color.text,
+      margin: 0,
+      fontSize: t.widgetHeaderFontSize,
+      fontWeight: 700,
+      letterSpacing: '0.02em',
+      textTransform: 'uppercase',
     },
-    subtitle: {
-      margin: '0 0 24px',
-      fontSize: t.fontSize.sm,
-      color: t.color.textMuted,
-    },
+    formContainer: { padding: 24 },
     form: { display: 'flex', flexDirection: 'column', gap: 16 },
-    label: {
-      display: 'block',
-      fontSize: t.fontSize.sm,
-      fontWeight: 500,
-      color: t.color.text,
-      marginBottom: 4,
-    },
     input: {
       width: '100%',
       padding: '10px 12px',
@@ -69,7 +68,14 @@ export default function Login({ onLogin }) {
       marginTop: 8,
     },
     error: { fontSize: t.fontSize.sm, color: t.color.error, marginTop: 8 },
-    links: { marginTop: 20, display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center' },
+    links: {
+      marginTop: 20,
+      display: 'flex',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      gap: 16,
+      alignItems: 'center',
+    },
     link: { color: t.color.primary, fontSize: t.fontSize.sm, textDecoration: 'none' },
   };
 
@@ -84,6 +90,8 @@ export default function Login({ onLogin }) {
     if (res?.ok && res?.user_id) {
       sessionStorage.setItem('sdwan_cms_user_id', res.user_id);
       if (res.email) sessionStorage.setItem('sdwan_cms_user_email', res.email);
+      if (res.account_id) sessionStorage.setItem('sdwan_cms_account_id', res.account_id);
+      if (res.master_organization_name != null) sessionStorage.setItem('sdwan_cms_master_org_name', res.master_organization_name);
       onLogin?.({ username, password });
       navigate('/', { replace: true });
     } else {
@@ -94,23 +102,25 @@ export default function Login({ onLogin }) {
   return (
     <div style={styles.page}>
       <div style={styles.card}>
-        <h1 style={styles.title}>{t.productName}</h1>
-        <p style={styles.subtitle}>{t.companyName}</p>
+        <div style={styles.header}>
+          <h1 style={styles.title}>{t.productName}</h1>
+        </div>
+        <div style={styles.formContainer}>
         <form style={styles.form} onSubmit={handleSubmit}>
-          <label style={styles.label}>Username</label>
           <input
             type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             style={styles.input}
+            placeholder="Username"
             autoComplete="username"
           />
-          <label style={styles.label}>Password</label>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             style={styles.input}
+            placeholder="Password"
             autoComplete="current-password"
           />
           {error && <div style={styles.error}>{error}</div>}
@@ -122,6 +132,7 @@ export default function Login({ onLogin }) {
             <Link to="/create-account" style={styles.link}>Create account</Link>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );

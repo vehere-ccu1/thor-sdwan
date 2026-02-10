@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useTheme } from '../../context/ThemeContext';
+import { getDataPageStyles } from '../../styles/dataPageStyles';
+import { IconKey, IconTrash } from '../../components/Icons';
 import { fetchTokens, createToken, revokeToken, fetchOrganizations } from '../../api/client';
 
 export default function Tokens() {
   const { theme: t } = useTheme();
+  const dataPageStyles = getDataPageStyles(t);
   const [tokens, setTokens] = useState([]);
   const [organizations, setOrganizations] = useState([]);
   const [newTokenOpen, setNewTokenOpen] = useState(false);
@@ -93,7 +96,7 @@ export default function Tokens() {
                 <th style={s.th}>Organization</th>
                 <th style={s.th}>Label</th>
                 <th style={s.th}>Created</th>
-                <th style={s.th}></th>
+                <th style={s.th}>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -103,7 +106,14 @@ export default function Tokens() {
                   <td style={s.td}>{tok.label || '—'}</td>
                   <td style={s.td}>{tok.created_at ? new Date(tok.created_at).toLocaleString() : '—'}</td>
                   <td style={s.td}>
-                    <button type="button" style={{ ...s.btnSecondary, padding: '4px 10px', fontSize: t.fontSize.xs }} onClick={() => handleRevoke(tok.id)}>Revoke</button>
+                    <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                      <button type="button" style={dataPageStyles.iconBtn} onClick={() => { setForm((f) => ({ ...f, organization_id: tok.organization_id || '', label: '' })); setNewTokenOpen(true); setCreatedToken(null); }} title="Generate Token">
+                        <IconKey size={16} />
+                      </button>
+                      <button type="button" style={dataPageStyles.iconBtn} onClick={() => handleRevoke(tok.id)} title="Revoke">
+                        <IconTrash size={16} />
+                      </button>
+                    </span>
                   </td>
                 </tr>
               ))}

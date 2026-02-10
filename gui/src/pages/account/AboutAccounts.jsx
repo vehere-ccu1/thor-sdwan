@@ -23,7 +23,7 @@ export default function AboutAccounts() {
 
       <section style={s.section}>
         <p style={s.p}>
-          The GUI is a multi-tenant management system that allows you to manage multiple independent and isolated networks within a single account. Such a network can represent a company (e.g. a customer of a service provider or systems integrator) or a subsidiary of an enterprise. As an example, a Service Provider with 100 enterprise customers will create 100 Organizations in his Account, each representing an enterprise customer.
+          The GUI is a multi-tenant management system that allows you to manage multiple independent and isolated networks within a single account. Such a network can represent an organization (e.g. a customer of a service provider or systems integrator) or a subsidiary of an enterprise. As an example, a Service Provider with 100 enterprise customers will create 100 Organizations in his Account, each representing an enterprise customer.
         </p>
         <p style={s.p}>A few things to note:</p>
         <ul style={s.ul}>

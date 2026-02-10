@@ -1,6 +1,8 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 import { getDataPageStyles } from '../../styles/dataPageStyles';
+import { IconKey, IconTrash } from '../../components/Icons';
 
 const COLUMNS = [
   { key: 'id', label: 'ID' },
@@ -31,6 +33,7 @@ function getDistinctValues(rows, key) {
 
 export default function Tunnels() {
   const { theme: t } = useTheme();
+  const navigate = useNavigate();
   const s = getDataPageStyles(t);
   const [rows, setRows] = useState(MOCK_ROWS);
   const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'ticket'
@@ -287,12 +290,11 @@ export default function Tunnels() {
               <span>{r.encrypt ? 'Yes' : 'No'}</span>
               <span>{r.status}</span>
               <div style={s.actions}>
-                <button
-                  type="button"
-                  style={{ ...s.btn, ...s.btnDanger, padding: '6px 10px' }}
-                  onClick={() => handleDelete(r.id)}
-                >
-                  Delete
+                <button type="button" style={s.iconBtn} onClick={() => navigate('/inventory/tokens')} title="Generate Token">
+                  <IconKey size={16} />
+                </button>
+                <button type="button" style={s.iconBtn} onClick={() => handleDelete(r.id)} title="Delete">
+                  <IconTrash size={16} />
                 </button>
               </div>
             </div>
@@ -312,12 +314,11 @@ export default function Tunnels() {
                 <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>{r.status}</span>
               </div>
               <div style={s.actions}>
-                <button
-                  type="button"
-                  style={{ ...s.btn, ...s.btnDanger, padding: '6px 10px' }}
-                  onClick={() => handleDelete(r.id)}
-                >
-                  Delete
+                <button type="button" style={s.iconBtn} onClick={() => navigate('/inventory/tokens')} title="Generate Token">
+                  <IconKey size={16} />
+                </button>
+                <button type="button" style={s.iconBtn} onClick={() => handleDelete(r.id)} title="Delete">
+                  <IconTrash size={16} />
                 </button>
               </div>
             </div>

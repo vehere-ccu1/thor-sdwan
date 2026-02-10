@@ -22,7 +22,7 @@ function MenuLink({ to, label, isHome, theme }) {
     background: theme.sideMenu.itemActiveBg,
     color: theme.sideMenu.itemActiveColor,
     fontWeight: 500,
-    borderLeftColor: theme.sideMenu.itemActiveColor,
+    borderLeft: `3px solid ${theme.sideMenu.itemActiveColor}`,
   };
   return (
     <Link
@@ -82,13 +82,12 @@ function ModeToggleButton({ theme, mode, setMode }) {
 
 const SUB_MENU_INDENT = 16;
 
-function MenuGroup({ label, children, theme }) {
-  const [open, setOpen] = useState(true);
+function MenuGroup({ label, children, theme, isOpen, onToggle }) {
   return (
     <>
       <button
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={onToggle}
         style={{
           padding: '12px 24px 6px',
           fontSize: theme.sideMenu.groupLabelFontSize,
@@ -106,12 +105,12 @@ function MenuGroup({ label, children, theme }) {
           gap: 6,
         }}
       >
-        <span style={{ display: 'inline-flex', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>
+        <span style={{ display: 'inline-flex', transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>
           <IconChevronRight size={14} />
         </span>
         {label}
       </button>
-      {open && <div style={{ paddingLeft: SUB_MENU_INDENT }}>{children}</div>}
+      {isOpen && <div style={{ paddingLeft: SUB_MENU_INDENT }}>{children}</div>}
     </>
   );
 }
@@ -132,6 +131,8 @@ export default function SideMenu() {
     zIndex: 100,
   };
 
+  const [openGroup, setOpenGroup] = useState('Account');
+
   return (
     <nav style={panelStyle}>
       <ul style={{ listStyle: 'none', margin: 0, padding: '16px 0' }}>
@@ -142,7 +143,12 @@ export default function SideMenu() {
             </li>
           ) : item.children ? (
             <li key={item.label}>
-              <MenuGroup label={item.label} theme={theme}>
+              <MenuGroup
+                label={item.label}
+                theme={theme}
+                isOpen={openGroup === item.label}
+                onToggle={() => setOpenGroup(openGroup === item.label ? null : item.label)}
+              >
                 {item.children.map((child) => (
                   <MenuLink key={child.path} to={child.path} label={child.label} theme={theme} />
                 ))}

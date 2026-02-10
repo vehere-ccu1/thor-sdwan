@@ -1,0 +1,18 @@
+---
+description: Use "Organization" instead of "Company" in UI and new code
+alwaysApply: true
+---
+
+# Terminology: Organization vs Company
+
+- **Use "Organization"** (not "Company") in:
+  - User-facing labels, placeholders, error messages, and help text
+  - New API request/response field names and documentation when referring to the tenant/organization entity
+  - Comments and docs that describe the account’s primary organization or master organization
+
+- **Exceptions** (keep as-is for backward compatibility or distinct meaning):
+  - Existing API/DB fields named `company_name` or `company` (e.g. create-owner-account request, config.json `company` for product vendor branding)
+  - Theme key `theme.companyName` when it denotes the product vendor / legal entity name in the UI (e.g. "R & D")
+  - Config key `company` in resource/config.json and about API if it represents vendor branding
+
+- When adding new features, prefer naming and copy that says "Organization" (or "Organization (Master)" where relevant) instead of "Company".

@@ -8,14 +8,12 @@ export const menuItems = [
     label: 'Account',
     children: [
       { path: '/account/profile', label: 'Profile' },
-      { path: '/account/about', label: 'About Accounts' },
-      { path: '/account/organizations', label: 'Organizations' },
-      { path: '/account/configuration', label: 'Configuration' },
-      { path: '/account/billing', label: 'Billing' },
+      { path: '/account/organization', label: 'Organization' },
       { path: '/account/access-key', label: 'Access Key' },
+      // Users page shown under Account section; route stays /users
+      { path: '/users', label: 'User Management' },
     ],
   },
-  { path: '/users', label: 'Users' },
   {
     label: 'Inventory',
     children: [
@@ -55,6 +53,5 @@ export const menuItems = [
       { path: '/troubleshoot/notification', label: 'Notification' },
     ],
   },
-  { path: '/about', label: 'About' },
   { type: 'modeToggle' },
 ];

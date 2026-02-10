@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
+import { countries, getFlagEmoji } from '../data/countries';
 import { createOwnerAccount } from '../api/client';
 
 export default function CreateAccount({ onLogin }) {
@@ -9,13 +10,14 @@ export default function CreateAccount({ onLogin }) {
   const [form, setForm] = useState({
     companyName: '',
     businessEmail: '',
-    firstName: '',
-    lastName: '',
+    name: '',
+    country: '',
     jobTitle: '',
     phoneNumber: '',
     password: '',
   });
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [busy, setBusy] = useState(false);
   const [success, setSuccess] = useState(false);
 
@@ -25,32 +27,52 @@ export default function CreateAccount({ onLogin }) {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: t.color.background,
+      // Use the same auth background as login
+      background: t.authBackground,
       fontFamily: t.fontFamily.sans,
       padding: 24,
     },
     card: {
       background: t.color.surface,
-      padding: 32,
-      borderRadius: 8,
-      boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+      padding: 0,
+      borderRadius: 12,
+      boxShadow: '0 10px 30px rgba(0,0,0,0.12)',
       width: '100%',
-      maxWidth: 440,
+      maxWidth: 480,
+      overflow: 'hidden',
     },
-    title: { margin: '0 0 8px', fontSize: t.fontSize['2xl'], fontWeight: 600, color: t.color.text },
+    header: {
+      background: t.widgetHeader.background,
+      color: t.widgetHeader.color,
+      padding: `${t.widgetHeader.paddingVertical}px ${t.widgetHeader.paddingHorizontal}px`,
+      textAlign: 'left',
+    },
+    title: {
+      margin: 0,
+      fontSize: t.widgetHeaderFontSize,
+      fontWeight: 700,
+      letterSpacing: '0.02em',
+    },
     note: { margin: '0 0 20px', fontSize: t.fontSize.sm, color: t.color.textMuted, lineHeight: 1.5 },
-    form: { display: 'flex', flexDirection: 'column', gap: 14 },
+    formContainer: { padding: 24 },
+    form: { display: 'flex', flexDirection: 'column', gap: 16 },
     label: { display: 'block', fontSize: t.fontSize.sm, fontWeight: 500, color: t.color.text, marginBottom: 4 },
+    field: { display: 'flex', flexDirection: 'column', gap: 4 },
     input: {
       width: '100%',
       padding: '10px 12px',
       fontSize: t.fontSize.base,
-      border: `1px solid ${t.color.border}`,
+      borderWidth: 1,
+      borderStyle: 'solid',
+      borderColor: t.color.border,
       borderRadius: t.button.borderRadius,
       fontFamily: t.fontFamily.sans,
       background: t.color.surface,
       color: t.color.text,
       boxSizing: 'border-box',
+    },
+    inputError: {
+      borderColor: t.color.error,
     },
     button: {
       padding: t.button.paddingVertical + ' ' + t.button.paddingHorizontal,
@@ -74,21 +96,28 @@ export default function CreateAccount({ onLogin }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    const { companyName, businessEmail, firstName, lastName, jobTitle, phoneNumber, password } = form;
-    if (!companyName.trim() || !businessEmail.trim() || !firstName.trim() || !lastName.trim() || !password) {
-      setError('Please fill Company Name, Business Email, First Name, Last Name, and Password.');
-      return;
-    }
-    if (password.length < 6) {
-      setError('Password should be at least 6 characters.');
+    setFieldErrors({});
+    const { companyName, businessEmail, name, country, jobTitle, phoneNumber, password } = form;
+    const nextFieldErrors = {};
+    if (!companyName.trim()) nextFieldErrors.companyName = 'Organization (Master) is required.';
+    if (!businessEmail.trim()) nextFieldErrors.businessEmail = 'Business email is required.';
+    else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(businessEmail.trim())) nextFieldErrors.businessEmail = 'Enter a valid email address.';
+    if (!name.trim()) nextFieldErrors.name = 'Name is required.';
+    if (!country.trim()) nextFieldErrors.country = 'Country is required.';
+    if (!password) nextFieldErrors.password = 'Password is required.';
+    else if (password.length < 8) nextFieldErrors.password = 'Password should be at least 8 characters.';
+    if (Object.keys(nextFieldErrors).length) {
+      setFieldErrors(nextFieldErrors);
+      setError('Please correct the highlighted fields.');
       return;
     }
     setBusy(true);
     const res = await createOwnerAccount({
       company_name: companyName.trim(),
       business_email: businessEmail.trim(),
-      first_name: firstName.trim(),
-      last_name: lastName.trim(),
+      name: name.trim(),
+      master_organization_name: companyName.trim(),
+      country: country.trim(),
       job_title: (jobTitle || '').trim(),
       phone_number: (phoneNumber || '').trim(),
       password,
@@ -120,33 +149,95 @@ export default function CreateAccount({ onLogin }) {
   return (
     <div style={styles.page}>
       <div style={styles.card}>
-        <h1 style={styles.title}>Create owner account</h1>
-        <p style={styles.note}>
-          If you are not the owner of an account or have been invited to an account, you can create a new account below.
-          There is typically one account per company. If you offer services to customers, you can add each customer as an organization in your account.
-          Please refer to Account and Organizations in the documentation (available after sign-in) to learn more.
-        </p>
+        <div style={styles.header}>
+          <h1 style={styles.title}>Create owner account</h1>
+        </div>
+        <div style={styles.formContainer}>
         <form style={styles.form} onSubmit={handleSubmit}>
-          <label style={styles.label}>Company Name *</label>
-          <input type="text" value={form.companyName} onChange={handleChange('companyName')} style={styles.input} autoComplete="organization" />
-          <label style={styles.label}>Business Email *</label>
-          <input type="email" value={form.businessEmail} onChange={handleChange('businessEmail')} style={styles.input} autoComplete="email" />
-          <label style={styles.label}>First Name *</label>
-          <input type="text" value={form.firstName} onChange={handleChange('firstName')} style={styles.input} autoComplete="given-name" />
-          <label style={styles.label}>Last Name *</label>
-          <input type="text" value={form.lastName} onChange={handleChange('lastName')} style={styles.input} autoComplete="family-name" />
-          <label style={styles.label}>Job Title</label>
-          <input type="text" value={form.jobTitle} onChange={handleChange('jobTitle')} style={styles.input} autoComplete="organization-title" />
-          <label style={styles.label}>Phone Number</label>
-          <input type="tel" value={form.phoneNumber} onChange={handleChange('phoneNumber')} style={styles.input} autoComplete="tel" />
-          <label style={styles.label}>Password *</label>
-          <input type="password" value={form.password} onChange={handleChange('password')} style={styles.input} autoComplete="new-password" minLength={6} />
+          <div style={styles.field}>
+            <input
+              type="text"
+              value={form.companyName}
+              onChange={handleChange('companyName')}
+              style={{ ...styles.input, ...(fieldErrors.companyName ? styles.inputError : {}) }}
+              placeholder="Organization (Master) *"
+              autoComplete="organization"
+            />
+          </div>
+          <div style={styles.field}>
+            <input
+              type="email"
+              value={form.businessEmail}
+              onChange={handleChange('businessEmail')}
+              style={{ ...styles.input, ...(fieldErrors.businessEmail ? styles.inputError : {}) }}
+              placeholder="Business Email *"
+              autoComplete="email"
+            />
+          </div>
+          <div style={styles.field}>
+            <input
+              type="text"
+              value={form.name}
+              onChange={handleChange('name')}
+              style={{ ...styles.input, ...(fieldErrors.name ? styles.inputError : {}) }}
+              placeholder="Name *"
+              autoComplete="name"
+            />
+          </div>
+          <div style={styles.field}>
+            <select
+              value={form.country}
+              onChange={handleChange('country')}
+              style={{ ...styles.input, ...(fieldErrors.country ? styles.inputError : {}) }}
+            >
+              <option value="">Country *</option>
+              <option value="IN">{getFlagEmoji('IN')} India</option>
+              {countries
+                .filter((c) => c.code !== 'IN')
+                .map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {getFlagEmoji(c.code)} {c.name}
+                  </option>
+                ))}
+            </select>
+          </div>
+          <div style={styles.field}>
+            <input
+              type="text"
+              value={form.jobTitle}
+              onChange={handleChange('jobTitle')}
+              style={styles.input}
+              placeholder="Job Title"
+              autoComplete="organization-title"
+            />
+          </div>
+          <div style={styles.field}>
+            <input
+              type="tel"
+              value={form.phoneNumber}
+              onChange={handleChange('phoneNumber')}
+              style={styles.input}
+              placeholder="Phone Number"
+              autoComplete="tel"
+            />
+          </div>
+          <div style={styles.field}>
+            <input
+              type="password"
+              value={form.password}
+              onChange={handleChange('password')}
+              style={{ ...styles.input, ...(fieldErrors.password ? styles.inputError : {}) }}
+              placeholder="Password *"
+              autoComplete="new-password"
+            />
+          </div>
           {error && <div style={styles.error}>{error}</div>}
           <button type="submit" style={styles.button} disabled={busy}>
             {busy ? 'Creating…' : 'Create account'}
           </button>
         </form>
         <Link to="/login" style={styles.link}>Back to sign in</Link>
+        </div>
       </div>
     </div>
   );

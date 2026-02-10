@@ -1,13 +1,18 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 import { getDataPageStyles } from '../../styles/dataPageStyles';
-import CollapsibleAddPanel from '../../components/CollapsibleAddPanel';
+import { IconEdit, IconTrash, IconKey } from '../../components/Icons';
 import {
-  fetchAccounts,
   fetchGroups,
   fetchOrganizations,
+  fetchUsers,
+  createGroup,
+  updateGroup,
+  deleteGroup,
   createOrganization,
   updateOrganization,
+  deleteOrganization,
 } from '../../api/client';
 
 const TUNNEL_KEY_METHODS = [
@@ -24,14 +29,19 @@ function nextId() {
 }
 
 export default function Organizations() {
-  const [accounts, setAccounts] = useState([]);
+  const navigate = useNavigate();
+  const [currentAccountId, setCurrentAccountId] = useState('');
   const [groups, setGroups] = useState([]);
+  const [users, setUsers] = useState([]);
   const [records, setRecords] = useState([]);
-  const [selectedAccountId, setSelectedAccountId] = useState('');
-  const [defaultId, setDefaultId] = useState(null);
   const [viewMode, setViewMode] = useState('grid');
-  const [addPanelExpanded, setAddPanelExpanded] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [activeTab, setActiveTab] = useState('group'); // 'group' | 'site'
+  const [editingGroupId, setEditingGroupId] = useState(null);
+  const [groupForm, setGroupForm] = useState({
+    name: '',
+    parent_group_id: '',
+  });
   const [form, setForm] = useState({
     account_id: '',
     group_id: '',
@@ -43,7 +53,7 @@ export default function Organizations() {
 
   const resetForm = () => {
     setForm({
-      account_id: selectedAccountId || '',
+      account_id: currentAccountId || '',
       group_id: '',
       name: '',
       group_name: '',
@@ -54,42 +64,43 @@ export default function Organizations() {
   };
 
   useEffect(() => {
-    fetchAccounts().then((list) => {
-      setAccounts(list);
-      if (!selectedAccountId && list.length > 0) setSelectedAccountId(list[0].id);
-    });
+    const aid = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('sdwan_cms_account_id') : null;
+    if (aid) setCurrentAccountId(aid);
   }, []);
 
   useEffect(() => {
-    if (selectedAccountId) {
-      fetchGroups(selectedAccountId).then((list) => setGroups(Array.isArray(list) ? list : []));
-      fetchOrganizations(selectedAccountId).then((list) => {
+    if (currentAccountId) {
+      fetchGroups(currentAccountId).then((list) => setGroups(Array.isArray(list) ? list : []));
+      fetchUsers(currentAccountId).then((list) => setUsers(Array.isArray(list) ? list : []));
+      fetchOrganizations(currentAccountId).then((list) => {
         const arr = Array.isArray(list) ? list : [];
         setRecords(arr);
-        const def = arr.find((r) => r.is_default);
-        setDefaultId(def ? def.id : (arr[0] ? arr[0].id : null));
       });
     } else {
       setGroups([]);
-      fetchOrganizations().then((list) => setRecords(Array.isArray(list) ? list : []));
+      setUsers([]);
+      setRecords([]);
     }
-  }, [selectedAccountId]);
+  }, [currentAccountId]);
 
   const handleAdd = async () => {
-    if (!form.name.trim()) return;
-    const accountId = form.account_id || selectedAccountId;
+    const name = form.name.trim();
+    if (!name) return;
+    const accountId = form.account_id || currentAccountId;
     if (!accountId) return;
+    // Require a Site group selection (default to the Master-Organization group if none selected).
+    const groupId = form.group_id || defaultGroupId;
+    if (!groupId) return;
     const res = await createOrganization({
       account_id: accountId,
-      group_id: form.group_id || null,
-      name: form.name.trim(),
+      group_id: groupId,
+      name,
       group_name: form.group_name.trim(),
       tunnel_key_exchange: form.tunnel_key_exchange || 'ikev2',
       is_default: form.is_default,
     });
     if (res) {
-      if (selectedAccountId) fetchOrganizations(selectedAccountId).then((list) => setRecords(Array.isArray(list) ? list : []));
-      else fetchOrganizations().then((list) => setRecords(Array.isArray(list) ? list : []));
+      if (currentAccountId) fetchOrganizations(currentAccountId).then((list) => setRecords(Array.isArray(list) ? list : []));
       resetForm();
     } else {
       const id = nextId();
@@ -104,7 +115,6 @@ export default function Organizations() {
           is_default: form.is_default,
         },
       ]);
-      if (defaultId === null) setDefaultId(id);
       resetForm();
     }
   };
@@ -112,14 +122,14 @@ export default function Organizations() {
   const handleEdit = (rec) => {
     setEditingId(rec.id);
     setForm({
-      account_id: rec.account_id || selectedAccountId || '',
+      account_id: rec.account_id || currentAccountId || '',
       group_id: rec.group_id || '',
       name: rec.name || '',
       group_name: rec.group_name || '',
       tunnel_key_exchange: rec.tunnel_key_exchange || 'ikev2',
       is_default: !!rec.is_default,
     });
-    setAddPanelExpanded(true);
+    setActiveTab('site');
   };
 
   const handleUpdate = async () => {
@@ -132,8 +142,7 @@ export default function Organizations() {
       is_default: form.is_default,
     });
     if (res) {
-      if (selectedAccountId) fetchOrganizations(selectedAccountId).then((list) => setRecords(Array.isArray(list) ? list : []));
-      else fetchOrganizations().then((list) => setRecords(Array.isArray(list) ? list : []));
+      if (currentAccountId) fetchOrganizations(currentAccountId).then((list) => setRecords(Array.isArray(list) ? list : []));
       resetForm();
     } else {
       setRecords((prev) =>
@@ -153,237 +162,346 @@ export default function Organizations() {
     }
   };
 
-  const handleDelete = (id) => {
-    if (window.confirm('Delete this organization?')) setRecords((prev) => prev.filter((r) => r.id !== id));
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this site?')) return;
+    const res = await deleteOrganization(id);
+    if (res && res.deleted) {
+      setRecords((prev) => prev.filter((r) => r.id !== id));
+      if (currentAccountId) fetchOrganizations(currentAccountId).then((list) => setRecords(Array.isArray(list) ? list : []));
+    }
   };
 
-  useEffect(() => {
-    if (!records.length) setDefaultId(null);
-    else if (defaultId && !records.some((r) => r.id === defaultId)) setDefaultId(records[0].id);
-  }, [records]);
-
-  const handleSetDefault = async (id) => {
-    const rec = records.find((r) => r.id === id);
-    if (!rec) return;
-    await updateOrganization(id, { is_default: true });
-    setRecords((prev) => prev.map((r) => ({ ...r, is_default: r.id === id })));
-    setDefaultId(id);
+  const handleEditGroup = (g) => {
+    setEditingGroupId(g.id);
+    setGroupForm({
+      name: g.name || '',
+      parent_group_id: g.parent_group_id != null ? String(g.parent_group_id) : '',
+    });
   };
 
-  const gridCols = '1fr 1fr 1fr 120px 120px 100px';
+  const handleDeleteGroup = async (id) => {
+    if (!window.confirm('Delete this site group?')) return;
+    const res = await deleteGroup(id);
+    if (res && res.deleted) {
+      setGroups((prev) => prev.filter((gr) => gr.id !== id));
+      if (currentAccountId) fetchGroups(currentAccountId).then((list) => setGroups(Array.isArray(list) ? list : []));
+    }
+  };
+
+  // Site groups grid: Name, Parent group, Created by, Created on, Action
+  const gridColsGroups = 'minmax(0,1.5fr) minmax(0,1.5fr) minmax(100px,1fr) minmax(120px,1fr) 120px';
+  // Sites grid: Site Name, Site Group, Master Owner, Created by, Created on, Key Exchange, Action
+  const gridCols = 'minmax(0,1.2fr) minmax(0,1.2fr) minmax(0,1fr) minmax(100px,1fr) minmax(120px,1fr) 90px 120px';
   const { theme: t } = useTheme();
   const s = getDataPageStyles(t);
-  const accountName = (id) => accounts.find((a) => a.id === id)?.billing_email || id || '—';
   const groupName = (id) => groups.find((g) => g.id === id)?.name || id || '—';
+  const masterOrgName = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('sdwan_cms_master_org_name') : null) || '—';
+  /** Build hierarchical label: "MasterOrgName - ParentSiteGroup - ChildSiteGroup" from root to this group.
+   *  When there is no group/parent, we show the account master-organization name from Profile.
+   */
+  const getGroupPathLabel = (groupId) => {
+    if (!groupId || String(groupId) === '00000000-0000-0000-0000-000000000000') return masterOrgName;
+    const idMap = new Map(groups.map((g) => [String(g.id), g]));
+    const path = [];
+    let currentId = String(groupId);
+    const seen = new Set();
+    while (currentId && idMap.has(currentId) && !seen.has(currentId)) {
+      seen.add(currentId);
+      const g = idMap.get(currentId);
+      path.push(g.name || g.id);
+      currentId = g.parent_group_id != null ? String(g.parent_group_id) : '';
+    }
+    const chain = path.reverse();
+    if (!chain.length) return masterOrgName;
+    return [masterOrgName, ...chain].join(' - ');
+  };
+  /** Groups sorted by path so dropdown shows Parent before Child */
+  const groupsSortedByPath = [...groups].sort((a, b) =>
+    getGroupPathLabel(a.id).localeCompare(getGroupPathLabel(b.id))
+  );
+  const defaultGroupId = groups.find((g) => (g.name || '').trim() === masterOrgName)?.id
+    || groups.find((g) => !g.parent_group_id || String(g.parent_group_id) === '00000000-0000-0000-0000-000000000000')?.id
+    || '';
+  const userLabel = (id) => (id && id !== '00000000-0000-0000-0000-000000000000' ? (id.length > 8 ? id.slice(0, 8) + '…' : id) : '—');
+  const userEmail = (id) => {
+    if (!id || id === '00000000-0000-0000-0000-000000000000') return '—';
+    const u = users.find((x) => String(x.id) === String(id));
+    return (u && (u.email || u.name)) || userLabel(id);
+  };
+  const masterOwnerDisplay = (r) => {
+    const email = userEmail(r.master_owner_user_id);
+    return email !== '—' ? email : masterOrgName;
+  };
+  const formatDate = (v) => (v ? new Date(v).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '—');
 
   return (
     <div style={s.page}>
-      <div style={s.header}>
-        <h1 style={s.title}>Organizations</h1>
-        <div style={{ ...s.toolbar, flexWrap: 'wrap', gap: 12 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: t.fontSize.sm }}>
-            <span style={{ color: t.color.textMuted }}>Account</span>
-            <select
-              value={selectedAccountId}
-              onChange={(e) => setSelectedAccountId(e.target.value)}
-              style={{ ...s.select, width: 'auto', minWidth: 180 }}
-            >
-              <option value="">All</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.billing_email || a.name || a.id}
-                </option>
-              ))}
-            </select>
-          </label>
+      {/* Tab panel: Create site group | Create new site */}
+      <div style={s.formCard}>
+        <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${t.color.border}`, marginBottom: 20 }}>
           <button
             type="button"
-            style={{ ...s.btn, ...s.btnSecondary }}
-            onClick={() => setViewMode(viewMode === 'grid' ? 'ticket' : 'grid')}
+            onClick={() => setActiveTab('group')}
+            style={{
+              ...s.btn,
+              ...s.btnSecondary,
+              borderRadius: 0,
+              borderBottom: activeTab === 'group' ? `2px solid ${t.button.primaryBg}` : '2px solid transparent',
+              fontWeight: activeTab === 'group' ? 600 : 400,
+              marginBottom: -1,
+            }}
           >
-            {viewMode === 'grid' ? 'Ticket view' : 'Grid view'}
+            Create site group
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('site')}
+            style={{
+              ...s.btn,
+              ...s.btnSecondary,
+              borderRadius: 0,
+              borderBottom: activeTab === 'site' ? `2px solid ${t.button.primaryBg}` : '2px solid transparent',
+              fontWeight: activeTab === 'site' ? 600 : 400,
+              marginBottom: -1,
+            }}
+          >
+            Create new site
           </button>
         </div>
-      </div>
-
-      <CollapsibleAddPanel
-        title={editingId ? 'Edit organization' : 'Create new organization'}
-        expanded={addPanelExpanded}
-        onToggle={() => setAddPanelExpanded((v) => !v)}
-      >
-        <div style={s.formRow}>
-          <label style={s.label}>Account</label>
-          <select
-            value={form.account_id}
-            onChange={(e) => setForm((f) => ({ ...f, account_id: e.target.value }))}
-            style={s.select}
-            disabled={!!editingId}
-          >
-            <option value="">— Select —</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.billing_email || a.name || a.id}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div style={s.formRow}>
-          <label style={s.label}>Group</label>
-          <select
-            value={form.group_id}
-            onChange={(e) => setForm((f) => ({ ...f, group_id: e.target.value }))}
-            style={s.select}
-          >
-            <option value="">— None —</option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div style={s.formRow}>
-          <label style={s.label}>Organization name</label>
-          <input
-            type="text"
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            style={s.input}
-            placeholder="Network / organization name"
-          />
-        </div>
-        <div style={s.formRow}>
-          <label style={s.label}>Group name (display)</label>
-          <input
-            type="text"
-            value={form.group_name}
-            onChange={(e) => setForm((f) => ({ ...f, group_name: e.target.value }))}
-            style={s.input}
-            placeholder="Optional"
-          />
-        </div>
-        <div style={s.formRow}>
-          <label style={s.label}>Tunnel Key Exchange Method</label>
-          <select
-            value={form.tunnel_key_exchange}
-            onChange={(e) => setForm((f) => ({ ...f, tunnel_key_exchange: e.target.value }))}
-            style={s.select}
-          >
-            {TUNNEL_KEY_METHODS.map((opt) => (
-              <option key={opt.value || '_'} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div style={s.formRow}>
-          <label style={{ ...s.label, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={form.is_default}
-              onChange={(e) => setForm((f) => ({ ...f, is_default: e.target.checked }))}
-              style={s.checkbox}
-            />
-            Set as default organization
-          </label>
-        </div>
-        <div style={s.toolbar}>
-          {editingId ? (
-            <>
-              <button type="button" style={{ ...s.btn, ...s.btnPrimary }} onClick={handleUpdate}>
-                Update
-              </button>
-              <button type="button" style={{ ...s.btn, ...s.btnSecondary }} onClick={resetForm}>
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button type="button" style={{ ...s.btn, ...s.btnPrimary }} onClick={handleAdd}>
-              Add
-            </button>
-          )}
-        </div>
-      </CollapsibleAddPanel>
-
-      {records.length === 0 ? (
-        <p style={s.empty}>No organizations. Create an account first (Account Profile), then add organizations above.</p>
-      ) : viewMode === 'grid' ? (
-        <>
-          <div style={{ ...s.grid(gridCols), ...s.gridHeader }}>
-            <span>Name</span>
-            <span>Account</span>
-            <span>Group</span>
-            <span>Tunnel Key Exchange</span>
-            <span>Action</span>
-            <span></span>
-          </div>
-          {records.map((r) => (
-            <div key={r.id} style={s.grid(gridCols)}>
-              <span>{r.name}</span>
-              <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>{accountName(r.account_id)}</span>
-              <span>{r.group_name_resolved || r.group_name || groupName(r.group_id) || '—'}</span>
-              <span>{r.tunnel_key_exchange || '—'}</span>
-              <span>
+        {activeTab === 'group' ? (
+          <>
+            <div style={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'flex-end', gap: 12, marginBottom: 0 }}>
+              <div style={{ ...s.formRow, marginBottom: 0, flex: '1 1 0', minWidth: 0, maxWidth: 220 }}>
+                <input
+                  type="text"
+                  value={groupForm.name}
+                  onChange={(e) => setGroupForm((g) => ({ ...g, name: e.target.value.replace(/-/g, '') }))}
+                  style={{ ...s.input, maxWidth: '100%' }}
+                  placeholder="Site group"
+                />
+              </div>
+              <div style={{ ...s.formRow, marginBottom: 0, flex: '1 1 0', minWidth: 0, maxWidth: 220 }}>
+                <select
+                  value={groupForm.parent_group_id}
+                  onChange={(e) => setGroupForm((g) => ({ ...g, parent_group_id: e.target.value }))}
+                  style={{ ...s.select, maxWidth: '100%' }}
+                  title="Parent site group"
+                >
+                  <option value="">{masterOrgName}</option>
+                  {groupsSortedByPath.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {getGroupPathLabel(g.id)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ flexShrink: 0 }}>
                 <button
                   type="button"
-                  style={{
-                    ...s.btn,
-                    ...s.btnSecondary,
-                    padding: '6px 10px',
-                    opacity: defaultId === r.id ? 0.7 : 1,
+                  style={{ ...s.btn, ...s.btnPrimary }}
+                  onClick={async () => {
+                    const name = groupForm.name.trim();
+                    if (!name || !currentAccountId) return;
+                    // Require a parent site-group for all new groups (use the default Master-Organization group if nothing selected).
+                    const parentId = groupForm.parent_group_id || defaultGroupId;
+                    if (!parentId) return;
+                    if (name.includes('-')) return; // hyphen not allowed in site group name
+                    if (editingGroupId) {
+                      await updateGroup(editingGroupId, {
+                        name,
+                        parent_group_id: parentId,
+                      });
+                    } else {
+                      await createGroup({
+                        account_id: currentAccountId,
+                        name,
+                        parent_group_id: parentId,
+                      });
+                    }
+                    if (currentAccountId) {
+                      const list = await fetchGroups(currentAccountId);
+                      setGroups(Array.isArray(list) ? list : []);
+                    }
+                    setGroupForm({ name: '', parent_group_id: defaultGroupId || '' });
+                    setEditingGroupId(null);
                   }}
-                  onClick={() => handleSetDefault(r.id)}
-                  title={defaultId === r.id ? 'Default' : 'Set as default'}
                 >
-                  {defaultId === r.id ? 'Default' : 'Set-Default'}
-                </button>
-              </span>
-              <div style={s.actions}>
-                <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '6px 10px' }} onClick={() => handleEdit(r)}>
-                  Edit
-                </button>
-                <button type="button" style={{ ...s.btn, ...s.btnDanger, padding: '6px 10px' }} onClick={() => handleDelete(r.id)}>
-                  Delete
+                  {editingGroupId ? 'Update' : 'Add'}
                 </button>
               </div>
             </div>
-          ))}
-        </>
-      ) : (
-        <div style={s.ticketList}>
-          {records.map((r) => (
-            <div key={r.id} style={s.ticketCard}>
-              <div style={s.ticketMain}>
-                <strong>{r.name}</strong>
-                <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>Account: {accountName(r.account_id)}</span>
-                <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>
-                  Group: {r.group_name_resolved || r.group_name || groupName(r.group_id) || '—'}
-                </span>
-                <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>Tunnel: {r.tunnel_key_exchange || '—'}</span>
-                {defaultId === r.id && (
-                  <span style={{ fontSize: t.fontSize.xs, color: t.color.primary, fontWeight: 500 }}>Default</span>
+            {/* Site groups data grid */}
+            <div style={{ marginTop: 24 }}>
+              {groups.length === 0 ? (
+                <p style={s.empty}>No site groups. Add one above.</p>
+              ) : (
+                <div style={s.gridWrapper}>
+                  <div style={{ ...s.grid(gridColsGroups), ...s.gridHeader }}>
+                    <span>Name</span>
+                    <span>Parent group</span>
+                    <span>Created by</span>
+                    <span>Created on</span>
+                    <span>Action</span>
+                  </div>
+                  {groups.map((g) => (
+                    <div key={g.id} style={s.grid(gridColsGroups)}>
+                      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.name || '—'}</span>
+                      <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {getGroupPathLabel(g.parent_group_id)}
+                      </span>
+                      <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{userEmail(g.created_by_user_id)}</span>
+                      <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatDate(g.created_at)}</span>
+                      <div style={s.actions}>
+                        <button type="button" style={s.iconBtn} onClick={() => handleEditGroup(g)} title="Edit">
+                          <IconEdit size={16} />
+                        </button>
+                        <button type="button" style={s.iconBtn} onClick={() => handleDeleteGroup(g.id)} title="Delete">
+                          <IconTrash size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'flex-end', gap: 12, marginBottom: 0 }}>
+              <div style={{ ...s.formRow, marginBottom: 0, flex: '1 1 0', minWidth: 0, maxWidth: 200 }}>
+                <select
+                  value={form.group_id}
+                  onChange={(e) => setForm((f) => ({ ...f, group_id: e.target.value }))}
+                  style={{ ...s.select, maxWidth: '100%' }}
+                  title="Site group"
+                >
+                  <option value="">{masterOrgName}</option>
+                  {groupsSortedByPath.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {getGroupPathLabel(g.id)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ ...s.formRow, marginBottom: 0, flex: '1 1 0', minWidth: 0, maxWidth: 200 }}>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  style={{ ...s.input, maxWidth: '100%' }}
+                  placeholder="Site name"
+                />
+              </div>
+              <div style={{ ...s.formRow, marginBottom: 0, flex: '1 1 0', minWidth: 0, maxWidth: 200 }}>
+                <select
+                  value={form.tunnel_key_exchange}
+                  onChange={(e) => setForm((f) => ({ ...f, tunnel_key_exchange: e.target.value }))}
+                  style={{ ...s.select, maxWidth: '100%' }}
+                  title="Tunnel Key Exchange Method"
+                >
+                  {TUNNEL_KEY_METHODS.map((opt) => (
+                    <option key={opt.value || '_'} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ flexShrink: 0 }}>
+                {editingId ? (
+                  <>
+                    <button type="button" style={{ ...s.btn, ...s.btnPrimary }} onClick={handleUpdate}>
+                      Update
+                    </button>
+                    <button type="button" style={{ ...s.btn, ...s.btnSecondary }} onClick={resetForm}>
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" style={{ ...s.btn, ...s.btnPrimary }} onClick={handleAdd}>
+                    Add
+                  </button>
                 )}
               </div>
-              <div style={s.actions}>
-                <button
-                  type="button"
-                  style={{ ...s.btn, ...s.btnSecondary, padding: '6px 10px' }}
-                  onClick={() => handleSetDefault(r.id)}
-                  title={defaultId === r.id ? 'Default' : 'Set as default'}
-                >
-                  {defaultId === r.id ? 'Default' : 'Set-Default'}
-                </button>
-                <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '6px 10px' }} onClick={() => handleEdit(r)}>
-                  Edit
-                </button>
-                <button type="button" style={{ ...s.btn, ...s.btnDanger, padding: '6px 10px' }} onClick={() => handleDelete(r.id)}>
-                  Delete
-                </button>
-              </div>
             </div>
-          ))}
-        </div>
-      )}
+            <div style={{ marginTop: 16, marginBottom: 8 }}>
+              <button
+                type="button"
+                style={{ ...s.btn, ...s.btnSecondary }}
+                onClick={() => setViewMode(viewMode === 'grid' ? 'ticket' : 'grid')}
+              >
+                {viewMode === 'grid' ? 'Ticket view' : 'Grid view'}
+              </button>
+            </div>
+            {/* Sites data grid */}
+            <div style={{ marginTop: 0 }}>
+              {records.length === 0 ? (
+                <p style={s.empty}>No sites. Add one above.</p>
+              ) : viewMode === 'grid' ? (
+                <div style={s.gridWrapper}>
+                  <div style={{ ...s.grid(gridCols), ...s.gridHeader }}>
+                    <span>Site Name</span>
+                    <span>Site Group</span>
+                    <span>Master Owner</span>
+                    <span>Created by</span>
+                    <span>Created on</span>
+                    <span>Key Exchange</span>
+                    <span>Action</span>
+                  </div>
+                  {records.map((r) => (
+                    <div key={r.id} style={s.grid(gridCols)}>
+                      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
+                      <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{getGroupPathLabel(r.group_id) || r.group_name_resolved || r.group_name || '—'}</span>
+                      <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{masterOwnerDisplay(r)}</span>
+                      <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{userEmail(r.created_by_user_id)}</span>
+                      <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatDate(r.created_at)}</span>
+                      <span>{r.tunnel_key_exchange || '—'}</span>
+                      <div style={s.actions}>
+                        <button type="button" style={s.iconBtn} onClick={() => navigate('/inventory/tokens', { state: { organizationId: r.id } })} title="Generate Token">
+                          <IconKey size={16} />
+                        </button>
+                        <button type="button" style={s.iconBtn} onClick={() => handleEdit(r)} title="Edit">
+                          <IconEdit size={16} />
+                        </button>
+                        <button type="button" style={s.iconBtn} onClick={() => handleDelete(r.id)} title="Delete">
+                          <IconTrash size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={s.ticketList}>
+                  {records.map((r) => (
+                    <div key={r.id} style={s.ticketCard}>
+                      <div style={s.ticketMain}>
+                        <strong>{r.name}</strong>
+                        <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>
+                          Site group: {getGroupPathLabel(r.group_id) || r.group_name_resolved || r.group_name || '—'}
+                        </span>
+                        <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>Master Owner: {masterOwnerDisplay(r)}</span>
+                        <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>Created by: {userEmail(r.created_by_user_id)}</span>
+                        <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>Created on: {formatDate(r.created_at)}</span>
+                        <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>Key Exchange: {r.tunnel_key_exchange || '—'}</span>
+                      </div>
+                      <div style={s.actions}>
+                        <button type="button" style={s.iconBtn} onClick={() => navigate('/inventory/tokens', { state: { organizationId: r.id } })} title="Generate Token">
+                          <IconKey size={16} />
+                        </button>
+                        <button type="button" style={s.iconBtn} onClick={() => handleEdit(r)} title="Edit">
+                          <IconEdit size={16} />
+                        </button>
+                        <button type="button" style={s.iconBtn} onClick={() => handleDelete(r.id)} title="Delete">
+                          <IconTrash size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

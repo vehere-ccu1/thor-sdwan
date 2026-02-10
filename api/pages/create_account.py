@@ -24,11 +24,15 @@ class CreateOwnerAccountRequest(BaseModel):
     """Request body for create-owner-account. Matches Create Account form."""
     company_name: str
     business_email: str
-    first_name: str
-    last_name: str
+    # New UI sends a single "name" field. Keep first/last for backward compatibility.
+    name: str = ""
+    first_name: str = ""
+    last_name: str = ""
     job_title: str = ""
     phone_number: str = ""
+    country: str = ""
     password: str
+    master_organization_name: str = ""
 
 
 def _password_sha256_hex(password: str) -> str:
@@ -44,28 +48,60 @@ def create_owner_account(body: CreateOwnerAccountRequest):
     """
     try:
         company_name = (body.company_name or "").strip()
-        business_email = (body.business_email or "").strip()
+        business_email = (body.business_email or "").strip().lower()
+        name = (body.name or "").strip()
         first_name = (body.first_name or "").strip()
         last_name = (body.last_name or "").strip()
+        job_title = (body.job_title or "").strip()
         password = body.password or ""
+        master_org_name = (body.master_organization_name or "").strip()
+        country = (body.country or "").strip()
 
         if not company_name or not business_email:
-            raise HTTPException(status_code=400, detail="Company name and business email are required.")
-        if not first_name or not last_name:
-            raise HTTPException(status_code=400, detail="First name and last name are required.")
+            raise HTTPException(status_code=400, detail="Organization (Master) and business email are required.")
+        if not name and (not first_name or not last_name):
+            raise HTTPException(status_code=400, detail="Name is required.")
+        if not master_org_name:
+            raise HTTPException(status_code=400, detail="Master-Organization name is required.")
         if len(password) < 6:
             raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
 
-        # 1. Create account (use string UUIDs so ClickHouse driver serializes correctly)
-        account_id = uuid4()
-        q_account = f"""INSERT INTO {CLICKHOUSE_DATABASE}.accounts (id, name, billing_email) VALUES"""
-        execute_many(q_account, [(str(account_id), company_name, business_email)])
+        # Enforce unique email (email is treated as the primary identifier).
+        # ClickHouse does not enforce uniqueness, so we guard at the API layer.
+        exists = execute(
+            f"SELECT 1 FROM {CLICKHOUSE_DATABASE}.users FINAL WHERE email = %(email)s LIMIT 1",
+            {"email": business_email},
+        )
+        if exists:
+            raise HTTPException(status_code=409, detail="A user with this email already exists.")
 
-        # 2. Create owner user (password hashed server-side)
+        # 1. IDs: account, the first owner (master owner), default site-group, and master organization
+        account_id = uuid4()
         user_id = uuid4()
-        full_name = f"{first_name} {last_name}".strip()
+        group_id = uuid4()
+        org_id = uuid4()
+        full_name = name or f"{first_name} {last_name}".strip()
         password_hash = _password_sha256_hex(password)
-        q_user = f"""INSERT INTO {CLICKHOUSE_DATABASE}.users (id, account_id, email, name, password_hash, role_id, is_owner, enabled) VALUES"""
+
+        # 2. Create account with master_owner_user_id, master_organization_name, and country/notifications
+        q_account = f"""INSERT INTO {CLICKHOUSE_DATABASE}.accounts (id, name, billing_email, master_owner_user_id, master_organization_name, country, notifications) VALUES"""
+        execute_many(
+            q_account,
+            [
+                (
+                    str(account_id),
+                    company_name,
+                    business_email,
+                    str(user_id),
+                    master_org_name,
+                    country,
+                    0,
+                )
+            ],
+        )
+
+        # 3. Create owner user (master owner: first sign-up from Create Account page)
+        q_user = f"""INSERT INTO {CLICKHOUSE_DATABASE}.users (id, account_id, email, name, password_hash, role_id, is_owner, enabled, master_owner_user_id, created_by_user_id, organizations, job_title) VALUES"""
         execute_many(
             q_user,
             [
@@ -78,6 +114,48 @@ def create_owner_account(body: CreateOwnerAccountRequest):
                     str(DEFAULT_OWNER_ROLE_ID),
                     1,
                     1,
+                    str(user_id),
+                    str(user_id),
+                    [],
+                    job_title,
+                )
+            ],
+        )
+
+        # 4. Create default site-group for the master organization.
+        #    This represents the top-level Site Group with the same name as the Master-Organization.
+        q_group = f"""INSERT INTO {CLICKHOUSE_DATABASE}.groups (id, account_id, name, master_owner_user_id, created_by_user_id, parent_group_id) VALUES"""
+        execute_many(
+            q_group,
+            [
+                (
+                    str(group_id),
+                    str(account_id),
+                    master_org_name,
+                    str(user_id),
+                    str(user_id),
+                    "00000000-0000-0000-0000-000000000000",
+                )
+            ],
+        )
+
+        # 5. Create master organization (site where SD-WAN agents will attach)
+        # organizations table columns: id, name, group_name, tunnel_key_exchange, is_default, created_at, updated_at
+        # plus account_id, group_id, master_owner_user_id, created_by_user_id added by schema_sync.
+        q_org = f"""INSERT INTO {CLICKHOUSE_DATABASE}.organizations (id, account_id, group_id, name, group_name, tunnel_key_exchange, is_default, master_owner_user_id, created_by_user_id) VALUES"""
+        execute_many(
+            q_org,
+            [
+                (
+                    str(org_id),
+                    str(account_id),
+                    str(group_id),
+                    master_org_name,
+                    "",
+                    "ikev2",
+                    1,
+                    str(user_id),
+                    str(user_id),
                 )
             ],
         )
@@ -88,6 +166,8 @@ def create_owner_account(body: CreateOwnerAccountRequest):
             "company_name": company_name,
             "business_email": business_email,
             "name": full_name,
+            "master_organization_id": str(org_id),
+            "master_organization_name": master_org_name,
         }
     except HTTPException:
         raise

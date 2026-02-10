@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { getDataPageStyles } from '../styles/dataPageStyles';
+import { IconKey } from '../components/Icons';
 import { fetchAuditTrail } from '../api/client';
 
 const GROUP_BY_OPTIONS = [
@@ -60,8 +62,9 @@ export default function AuditTrail() {
   }, [userId, filters.dateFrom, filters.dateTo, filters.action, filters.resource, filters.groupBy]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { theme: t } = useTheme();
+  const navigate = useNavigate();
   const s = getDataPageStyles(t);
-  const gridCols = '140px 1fr 100px 120px 120px 1fr 100px';
+  const gridCols = '140px 1fr 100px 120px 120px 1fr 100px 80px';
 
   if (!userId) {
     return (
@@ -158,6 +161,7 @@ export default function AuditTrail() {
             <span>Resource ID</span>
             <span>Details</span>
             <span>IP</span>
+            <span>Action</span>
           </div>
           {rows.map((r) => (
             <div key={r.id || r.ts + r.user_id} style={s.grid(gridCols)}>
@@ -168,6 +172,11 @@ export default function AuditTrail() {
               <span style={{ fontSize: t.fontSize.sm }}>{r.resource_id || '—'}</span>
               <span style={{ fontSize: t.fontSize.sm, overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }} title={r.details}>{r.details || '—'}</span>
               <span style={{ fontSize: t.fontSize.sm, color: t.color.textMuted }}>{r.ip || '—'}</span>
+              <div style={s.actions}>
+                <button type="button" style={s.iconBtn} onClick={() => navigate('/inventory/tokens')} title="Generate Token">
+                  <IconKey size={16} />
+                </button>
+              </div>
             </div>
           ))}
         </>

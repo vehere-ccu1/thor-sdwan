@@ -6,6 +6,7 @@ Tables/views use IF NOT EXISTS or ADD COLUMN IF NOT EXISTS; seed (05) runs only 
 import logging
 import os
 import re
+import time
 
 from config import CLICKHOUSE_DATABASE
 from db import get_client, get_client_default_db
@@ -104,6 +105,33 @@ def _ensure_accounts_columns(client) -> None:
                 client.execute(f"ALTER TABLE {t} ADD COLUMN group_id UUID DEFAULT {default_uuid}")
             except Exception as e:
                 logger.warning("Could not add organizations.group_id: %s", e)
+        if not _column_exists(client, "organizations", "master_owner_user_id"):
+            try:
+                client.execute(f"ALTER TABLE {t} ADD COLUMN master_owner_user_id UUID DEFAULT {default_uuid}")
+            except Exception as e:
+                logger.warning("Could not add organizations.master_owner_user_id: %s", e)
+        if not _column_exists(client, "organizations", "created_by_user_id"):
+            try:
+                client.execute(f"ALTER TABLE {t} ADD COLUMN created_by_user_id UUID DEFAULT {default_uuid}")
+            except Exception as e:
+                logger.warning("Could not add organizations.created_by_user_id: %s", e)
+    if _table_exists(client, "groups"):
+        t = f"{CLICKHOUSE_DATABASE}.groups"
+        if not _column_exists(client, "groups", "master_owner_user_id"):
+            try:
+                client.execute(f"ALTER TABLE {t} ADD COLUMN master_owner_user_id UUID DEFAULT {default_uuid}")
+            except Exception as e:
+                logger.warning("Could not add groups.master_owner_user_id: %s", e)
+        if not _column_exists(client, "groups", "created_by_user_id"):
+            try:
+                client.execute(f"ALTER TABLE {t} ADD COLUMN created_by_user_id UUID DEFAULT {default_uuid}")
+            except Exception as e:
+                logger.warning("Could not add groups.created_by_user_id: %s", e)
+        if not _column_exists(client, "groups", "parent_group_id"):
+            try:
+                client.execute(f"ALTER TABLE {t} ADD COLUMN parent_group_id UUID DEFAULT {default_uuid}")
+            except Exception as e:
+                logger.warning("Could not add groups.parent_group_id: %s", e)
     if _table_exists(client, "users"):
         t = f"{CLICKHOUSE_DATABASE}.users"
         if not _column_exists(client, "users", "account_id"):
@@ -116,6 +144,54 @@ def _ensure_accounts_columns(client) -> None:
                 client.execute(f"ALTER TABLE {t} ADD COLUMN is_owner UInt8 DEFAULT 0")
             except Exception as e:
                 logger.warning("Could not add users.is_owner: %s", e)
+        if not _column_exists(client, "users", "created_by_user_id"):
+            try:
+                client.execute(f"ALTER TABLE {t} ADD COLUMN created_by_user_id UUID DEFAULT {default_uuid}")
+            except Exception as e:
+                logger.warning("Could not add users.created_by_user_id: %s", e)
+        if not _column_exists(client, "users", "master_owner_user_id"):
+            try:
+                client.execute(f"ALTER TABLE {t} ADD COLUMN master_owner_user_id UUID DEFAULT {default_uuid}")
+            except Exception as e:
+                logger.warning("Could not add users.master_owner_user_id: %s", e)
+        if not _column_exists(client, "users", "organizations"):
+            try:
+                client.execute(f"ALTER TABLE {t} ADD COLUMN organizations Array(String) DEFAULT []")
+            except Exception as e:
+                logger.warning("Could not add users.organizations: %s", e)
+        if not _column_exists(client, "users", "organization_group_ids"):
+            try:
+                client.execute(f"ALTER TABLE {t} ADD COLUMN organization_group_ids Array(String) DEFAULT []")
+            except Exception as e:
+                logger.warning("Could not add users.organization_group_ids: %s", e)
+        if not _column_exists(client, "users", "job_title"):
+            try:
+                client.execute(f"ALTER TABLE {t} ADD COLUMN job_title String DEFAULT ''")
+            except Exception as e:
+                logger.warning("Could not add users.job_title: %s", e)
+    if _table_exists(client, "accounts"):
+        t = f"{CLICKHOUSE_DATABASE}.accounts"
+        if not _column_exists(client, "accounts", "master_owner_user_id"):
+            try:
+                client.execute(f"ALTER TABLE {t} ADD COLUMN master_owner_user_id UUID DEFAULT {default_uuid}")
+            except Exception as e:
+                logger.warning("Could not add accounts.master_owner_user_id: %s", e)
+        # Optional UI fields on Account Profile
+        if not _column_exists(client, "accounts", "country"):
+            try:
+                client.execute(f"ALTER TABLE {t} ADD COLUMN country String DEFAULT ''")
+            except Exception as e:
+                logger.warning("Could not add accounts.country: %s", e)
+        if not _column_exists(client, "accounts", "notifications"):
+            try:
+                client.execute(f"ALTER TABLE {t} ADD COLUMN notifications UInt8 DEFAULT 0")
+            except Exception as e:
+                logger.warning("Could not add accounts.notifications: %s", e)
+        if not _column_exists(client, "accounts", "master_organization_name"):
+            try:
+                client.execute(f"ALTER TABLE {t} ADD COLUMN master_organization_name String DEFAULT ''")
+            except Exception as e:
+                logger.warning("Could not add accounts.master_organization_name: %s", e)
 
 
 def _ensure_audit_trail_columns(client) -> None:
@@ -146,6 +222,38 @@ def _has_any_users(client) -> bool:
         return bool(rows)
     except Exception:
         return False
+
+
+def _ensure_manager_viewer_roles(client) -> None:
+    """Ensure Manager and Viewer roles exist (fixed UUIDs) so account role updates work.
+    On timeout we retry once. A 401 on /login is unrelated (invalid email or password)."""
+    if not _table_exists(client, "roles"):
+        return
+    for attempt in range(2):
+        try:
+            rows = client.execute(
+                f"SELECT name FROM {CLICKHOUSE_DATABASE}.roles FINAL WHERE name IN ('Manager', 'Viewer')",
+            )
+            found = {str(r[0]) for r in rows} if rows else set()
+            if "Manager" not in found:
+                client.execute(
+                    f"""INSERT INTO {CLICKHOUSE_DATABASE}.roles (id, name, description, permissions)
+                    VALUES (toUUID('44444444-4444-4444-4444-444444444444'), 'Manager', 'Manager', '["users:read","devices:read","devices:write"]')""",
+                )
+                logger.info("Created Manager role")
+            if "Viewer" not in found:
+                client.execute(
+                    f"""INSERT INTO {CLICKHOUSE_DATABASE}.roles (id, name, description, permissions)
+                    VALUES (toUUID('55555555-5555-5555-5555-555555555555'), 'Viewer', 'Viewer', '["users:read","devices:read"]')""",
+                )
+                logger.info("Created Viewer role")
+            return
+        except Exception as e:
+            if attempt == 0 and ("timed out" in str(e).lower() or "timeout" in str(e).lower()):
+                time.sleep(1)
+                continue
+            logger.warning("Could not ensure Manager/Viewer roles: %s", e)
+            return
 
 
 def _ensure_database() -> None:
@@ -187,4 +295,5 @@ def ensure_schema() -> None:
         logger.warning("Seed skipped: users table does not exist (schema 01 may have failed)")
     else:
         logger.debug("Seed skipped (users already exist)")
+    _ensure_manager_viewer_roles(client)
     logger.info("Schema sync completed")

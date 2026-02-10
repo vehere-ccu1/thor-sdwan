@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 import { getDataPageStyles } from '../../styles/dataPageStyles';
 import CollapsibleAddPanel from '../../components/CollapsibleAddPanel';
+import { IconEdit, IconTrash, IconKey } from '../../components/Icons';
 
 const CATEGORIES = ['Browser', 'Streaming', 'VoIP', 'Gaming', 'Business', 'Other'];
 const SERVICE_CLASSES = ['Real-time', 'Interactive', 'Bulk', 'Best-effort'];
@@ -21,6 +23,7 @@ function nextId() {
 
 export default function TrafficAppIdentification() {
   const { theme: t } = useTheme();
+  const navigate = useNavigate();
   const s = getDataPageStyles(t);
 
   const [manualRows, setManualRows] = useState([]);
@@ -151,16 +154,19 @@ export default function TrafficAppIdentification() {
           <span>{r.serviceClass || '—'}</span>
           <span>{r.importance || '—'}</span>
           <div style={s.actions}>
-            <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '6px 10px' }} onClick={() => onUpdate(r)}>
-              Update
+            <button type="button" style={s.iconBtn} onClick={() => navigate('/inventory/tokens')} title="Generate Token">
+              <IconKey size={16} />
+            </button>
+            <button type="button" style={s.iconBtn} onClick={() => onUpdate(r)} title="Update">
+              <IconEdit size={16} />
             </button>
             {onDelete && (
-              <button type="button" style={{ ...s.btn, ...s.btnDanger, padding: '6px 10px' }} onClick={() => onDelete(r.id)}>
-                Delete
+              <button type="button" style={s.iconBtn} onClick={() => onDelete(r.id)} title="Delete">
+                <IconTrash size={16} />
               </button>
             )}
             {showRefresh && (
-              <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '6px 10px' }} onClick={() => onRefresh(r.id)}>
+              <button type="button" style={s.iconBtn} onClick={() => onRefresh(r.id)} title="Refresh">
                 Refresh
               </button>
             )}
@@ -182,12 +188,21 @@ export default function TrafficAppIdentification() {
             <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>{r.importance}</span>
           </div>
           <div style={s.actions}>
-            <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '6px 10px' }} onClick={() => onUpdate(r)}>Update</button>
+            <button type="button" style={s.iconBtn} onClick={() => navigate('/inventory/tokens')} title="Generate Token">
+              <IconKey size={16} />
+            </button>
+            <button type="button" style={s.iconBtn} onClick={() => onUpdate(r)} title="Update">
+              <IconEdit size={16} />
+            </button>
             {onDelete && (
-              <button type="button" style={{ ...s.btn, ...s.btnDanger, padding: '6px 10px' }} onClick={() => onDelete(r.id)}>Delete</button>
+              <button type="button" style={s.iconBtn} onClick={() => onDelete(r.id)} title="Delete">
+                <IconTrash size={16} />
+              </button>
             )}
             {showRefresh && (
-              <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '6px 10px' }} onClick={() => onRefresh(r.id)}>Refresh</button>
+              <button type="button" style={s.iconBtn} onClick={() => onRefresh(r.id)} title="Refresh">
+                Refresh
+              </button>
             )}
           </div>
         </div>

@@ -8,7 +8,7 @@ This file is read by the API at startup and can be edited via the GUI **Account 
 | `api_port` | Listener port for the API. | `3443` |
 | `api_prefix` | URL path prefix for all API routes (e.g. `/sdwan_cms_api`). | `/sdwan_cms_api` |
 | `product` | Product name shown in the UI. | — |
-| `company` | Company name shown in the UI. | — |
+| `company` | Organization / vendor name shown in the UI (e.g. product vendor). | — |
 | `clickhouse_host` | ClickHouse server host. | `localhost` |
 | `clickhouse_port` | ClickHouse server port. | `9000` |
 | `clickhouse_database` | ClickHouse database name. | `sdwan_cms` |

@@ -13,11 +13,9 @@ export default function About() {
     <div>
       <h1 style={styles.title}>About</h1>
       <p style={styles.text}>{t.productName}</p>
-      <p style={styles.text}>{t.companyName}</p>
+      <p style={styles.text}>{t.manufacturer_name}</p>
       <section style={styles.section}>
-        <p style={styles.text}>
-          <Link to="/account/about" style={styles.link}>Accounts and Organizations</Link> — multi-tenant accounts, organizations, groups, and user access.
-        </p>
+        {/* Accounts and Organizations page removed */}
         <p style={styles.text}>
           <Link to="/inventory/device-configuration" style={styles.link}>Device Configuration</Link> — device settings, interfaces, WAN/LAN, DHCP, and troubleshooting.
         </p>

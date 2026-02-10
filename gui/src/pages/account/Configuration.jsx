@@ -139,7 +139,7 @@ export default function Configuration() {
           />
         </div>
         <div style={s.formRow}>
-          <label style={s.label}>Company name</label>
+          <label style={s.label}>Organization name</label>
           <input
             type="text"
             value={form.company}

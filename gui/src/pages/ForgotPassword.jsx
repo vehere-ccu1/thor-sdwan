@@ -17,19 +17,33 @@ export default function ForgotPassword() {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: t.color.background,
+      // Use the shared auth background for consistency with login/create-account
+      background: t.authBackground,
       fontFamily: t.fontFamily.sans,
     },
     card: {
       background: t.color.surface,
-      padding: 32,
-      borderRadius: 8,
-      boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+      padding: 0,
+      borderRadius: 12,
+      boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
       width: '100%',
-      maxWidth: 360,
+      maxWidth: 380,
+      overflow: 'hidden',
     },
-    title: { margin: '0 0 8px', fontSize: t.fontSize['2xl'], fontWeight: 600, color: t.color.text },
+    header: {
+      background: t.widgetHeader.background,
+      color: t.widgetHeader.color,
+      padding: `${t.widgetHeader.paddingVertical}px ${t.widgetHeader.paddingHorizontal}px`,
+      textAlign: 'left',
+    },
+    title: {
+      margin: 0,
+      fontSize: t.widgetHeaderFontSize,
+      fontWeight: 700,
+      letterSpacing: '0.02em',
+    },
     subtitle: { margin: '0 0 24px', fontSize: t.fontSize.sm, color: t.color.textMuted },
+    formContainer: { padding: 24 },
     form: { display: 'flex', flexDirection: 'column', gap: 16 },
     label: { display: 'block', fontSize: t.fontSize.sm, fontWeight: 500, color: t.color.text, marginBottom: 4 },
     input: {
@@ -63,11 +77,9 @@ export default function ForgotPassword() {
     e.preventDefault();
     if (!email.trim()) return;
     setBusy(true);
-    setMessage('');
     // Placeholder: OTP would be sent by backend to registered email
     await new Promise((r) => setTimeout(r, 800));
     setBusy(false);
-    setMessage('If this email is registered, an OTP has been sent. Check your inbox.');
     setStep(2);
   };
 
@@ -88,14 +100,12 @@ export default function ForgotPassword() {
   return (
     <div style={styles.page}>
       <div style={styles.card}>
-        <h1 style={styles.title}>Forgot Password</h1>
-        <p style={styles.subtitle}>
-          Reset your password using an OTP sent to your registered email.
-        </p>
-
+        <div style={styles.header}>
+          <h1 style={styles.title}>Forgot Password</h1>
+        </div>
+        <div style={styles.formContainer}>
         {step === 1 ? (
           <form style={styles.form} onSubmit={handleSendOtp}>
-            <label style={styles.label}>Registered email</label>
             <input
               type="email"
               value={email}
@@ -111,22 +121,20 @@ export default function ForgotPassword() {
           </form>
         ) : (
           <form style={styles.form} onSubmit={handleResetPassword}>
-            <label style={styles.label}>OTP (from email)</label>
             <input
               type="text"
               value={otp}
               onChange={(e) => setOtp(e.target.value)}
               style={styles.input}
-              placeholder="Enter OTP"
+              placeholder="OTP (from email)"
               autoComplete="one-time-code"
             />
-            <label style={styles.label}>New password</label>
             <input
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               style={styles.input}
-              placeholder="At least 6 characters"
+              placeholder="New password (at least 6 characters)"
               minLength={6}
               autoComplete="new-password"
             />
@@ -141,6 +149,7 @@ export default function ForgotPassword() {
         )}
 
         <Link to="/login" style={styles.link}>Back to sign in</Link>
+        </div>
       </div>
     </div>
   );

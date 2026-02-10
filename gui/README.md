@@ -33,4 +33,4 @@ Output goes to `build/`. Point the API’s `clientStaticDir` to `../gui/build` (
 
 ## Theme
 
-Edit `src/theme.js` for product name, company name, fonts, colors, button style, header background, and side menu styling. Icons use `theme.iconColor`.
+Edit `src/theme.js` for product name, organization/vendor name, fonts, colors, button style, header background, and side menu styling. Icons use `theme.iconColor`.

@@ -17,7 +17,12 @@ async function request(path, options = {}) {
   try {
     const base = getBaseUrl().replace(/\/$/, '');
     const url = path.startsWith('/') ? base + path : base + '/' + path;
-    const res = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', ...options.headers } });
+    const headers = { 'Content-Type': 'application/json', ...options.headers };
+    if (typeof window !== 'undefined') {
+      const userId = sessionStorage.getItem('sdwan_cms_user_id');
+      if (userId) headers['X-User-Id'] = userId;
+    }
+    const res = await fetch(url, { ...options, headers });
     if (!res.ok) return null;
     const text = await res.text();
     return text ? JSON.parse(text) : null;
@@ -92,6 +97,10 @@ export async function updateAccount(id, body) {
   return request(`/accounts/${id}`, { method: 'PUT', body: JSON.stringify(body) });
 }
 
+export async function deleteAccount(id) {
+  return request(`/accounts/${id}`, { method: 'DELETE' });
+}
+
 export async function createGroup(body) {
   return request('/groups', { method: 'POST', body: JSON.stringify(body) });
 }
@@ -108,12 +117,24 @@ export async function updateOrganization(id, body) {
   return request(`/organizations/${id}`, { method: 'PUT', body: JSON.stringify(body) });
 }
 
+export async function deleteOrganization(id) {
+  return request(`/organizations/${id}`, { method: 'DELETE' });
+}
+
+export async function deleteGroup(id) {
+  return request(`/groups/${id}`, { method: 'DELETE' });
+}
+
 export async function createUser(body) {
   return request('/users', { method: 'POST', body: JSON.stringify(body) });
 }
 
 export async function updateUser(id, body) {
   return request(`/users/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+}
+
+export async function deleteUser(id) {
+  return request(`/users/${id}`, { method: 'DELETE' });
 }
 
 export async function fetchUserPermissions(userId) {

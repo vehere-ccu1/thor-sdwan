@@ -82,7 +82,15 @@ export function getDataPageStyles(t) {
       marginBottom: 8,
       fontFamily: t.fontFamily.sans,
       color: t.color.text,
+      width: '100%',
+      minWidth: 0,
+      boxSizing: 'border-box',
     }),
+    gridWrapper: {
+      width: '100%',
+      minWidth: 0,
+      overflowX: 'auto',
+    },
     gridHeader: {
       fontWeight: 600,
       color: t.color.textMuted,
@@ -103,6 +111,21 @@ export function getDataPageStyles(t) {
     },
     ticketMain: { display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
     empty: { color: t.color.textMuted, padding: 24, textAlign: 'center' },
-    actions: { display: 'flex', gap: 8 },
+    actions: { display: 'flex', gap: 6 },
+    iconBtn: {
+      width: 28,
+      height: 28,
+      minWidth: 28,
+      flexShrink: 0,
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: 4,
+      border: `1px solid ${t.color.border}`,
+      background: 'transparent',
+      padding: 0,
+      cursor: 'pointer',
+      color: 'inherit',
+    },
   };
 }

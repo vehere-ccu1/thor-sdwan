@@ -6,7 +6,7 @@
 
 const baseTheme = {
   productName: 'SD-WAN-CMS',
-  companyName: 'R & D',
+  manufacturer_name: 'TBD',
   fontFamily: {
     sans: '"Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
     mono: '"JetBrains Mono", "Fira Code", monospace',
@@ -18,6 +18,18 @@ const baseTheme = {
     lg: '1.125rem',
     xl: '1.25rem',
     '2xl': '1.5rem',
+  },
+  // Default header font-size for widget/card titles
+  widgetHeaderFontSize: '1.125rem',
+  // Shared background for auth pages (login, create-account, forgot-password) – light gray → dark gray
+  authBackground:
+    'radial-gradient(circle at top, rgba(230,230,230,0.95) 0%, rgba(140,140,140,0.96) 45%, rgba(60,60,60,0.98) 100%)',
+  // Reusable header style for cards/widgets (auth now, later in-app)
+  widgetHeader: {
+    background: '#0b1f3b',
+    color: '#ffffff',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
   },
   addPanelExpandIcon: 'plus',
 };

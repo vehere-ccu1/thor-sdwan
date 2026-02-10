@@ -21,7 +21,7 @@ def _load_config_json() -> dict:
 
 @router.get("/about")
 def about():
-    """Product and company info; links to account and device-configuration docs."""
+    """Product and organization/vendor info; links to account and device-configuration docs."""
     cfg = _load_config_json()
     return {
         "product": cfg.get("product", "SD-WAN-CMS"),

@@ -6,12 +6,9 @@ import CreateAccount from './pages/CreateAccount';
 import ForgotPassword from './pages/ForgotPassword';
 import MainLayout from './components/MainLayout';
 import Home from './pages/Home';
-import About from './pages/About';
 import PlaceholderPage from './pages/PlaceholderPage';
 import Profile from './pages/account/Profile';
 import Organizations from './pages/account/Organizations';
-import AboutAccounts from './pages/account/AboutAccounts';
-import Configuration from './pages/account/Configuration';
 import Users from './pages/Users';
 import Tunnels from './pages/inventory/Tunnels';
 import TrafficAppIdentification from './pages/inventory/TrafficAppIdentification';
@@ -46,6 +43,8 @@ export default function App() {
     sessionStorage.removeItem(AUTH_KEY);
     sessionStorage.removeItem('sdwan_cms_user_id');
     sessionStorage.removeItem('sdwan_cms_user_email');
+    sessionStorage.removeItem('sdwan_cms_account_id');
+    sessionStorage.removeItem('sdwan_cms_master_org_name');
     setIsLoggedIn(false);
   };
 
@@ -63,11 +62,8 @@ export default function App() {
           <Routes>
             <Route path="/" element={<MainLayout onLogout={handleLogout} />}>
           <Route index element={<Home />} />
-          <Route path="account/profile" element={<Profile />} />
-          <Route path="account/about" element={<AboutAccounts />} />
-          <Route path="account/organizations" element={<Organizations />} />
-          <Route path="account/configuration" element={<Configuration />} />
-          <Route path="account/billing" element={<PlaceholderPage title="Billing" />} />
+          <Route path="account/profile" element={<Profile onLogout={handleLogout} />} />
+          <Route path="account/organization" element={<Organizations />} />
           <Route path="account/access-key" element={<PlaceholderPage title="Access Key" />} />
           <Route path="users" element={<Users />} />
           <Route path="inventory/devices" element={<Devices />} />
@@ -84,7 +80,6 @@ export default function App() {
           <Route path="dashboards/traffic" element={<PlaceholderPage title="Traffic Dashboard" />} />
           <Route path="troubleshoot/job" element={<PlaceholderPage title="Job" />} />
           <Route path="troubleshoot/notification" element={<PlaceholderPage title="Notification" />} />
-          <Route path="about" element={<About />} />
         </Route>
             <Route path="/login" element={<Navigate to="/" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
