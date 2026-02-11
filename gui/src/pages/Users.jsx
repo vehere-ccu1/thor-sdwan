@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { getDataPageStyles } from '../styles/dataPageStyles';
-import { IconEdit, IconTrash, IconBlocked, IconCheck, IconInfo, IconKey, IconGrid, IconTicket, IconLink, IconPlus, IconMinus } from '../components/Icons';
+import { IconEdit, IconTrash, IconBlocked, IconCheck, IconInfo, IconGrid, IconTicket, IconLink, IconPlus, IconMinus } from '../components/Icons';
 import {
   fetchAccounts,
   fetchGroups,
@@ -16,6 +16,7 @@ import {
   updatePermission,
   deletePermission,
 } from '../api/client';
+import { countries } from '../data/countries';
 
 const PERMISSION_TO_OPTIONS = [
   { value: 'account', label: 'Account' },
@@ -34,12 +35,13 @@ const ROLE_OPTIONS_ORG_GROUP = [
   { value: 'viewer', label: 'Viewer' },
 ];
 
-function MultiCheckboxDropdown({ label, options, value, onChange, placeholder, styles, theme }) {
+function MultiCheckboxDropdown({ label, options, value, onChange, placeholder, styles, theme, disabled }) {
   const [open, setOpen] = useState(false);
   const selectedLabels = options.filter((o) => value.includes(o.value)).map((o) => o.label);
   const summary = selectedLabels.length ? selectedLabels.join(', ') : placeholder;
 
   const toggleOption = (val) => {
+    if (disabled) return;
     const exists = value.includes(val);
     const next = exists ? value.filter((v) => v !== val) : [...value, val];
     onChange(next);
@@ -50,14 +52,16 @@ function MultiCheckboxDropdown({ label, options, value, onChange, placeholder, s
       {!!label && <label style={styles.label}>{label}</label>}
       <button
         type="button"
+        disabled={disabled}
         style={{
           ...styles.select,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          cursor: 'pointer',
+          cursor: disabled ? 'default' : 'pointer',
+          opacity: disabled ? 0.75 : 1,
         }}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => !disabled && setOpen((v) => !v)}
       >
         <span
           style={{
@@ -140,13 +144,88 @@ function MultiCheckboxDropdown({ label, options, value, onChange, placeholder, s
   );
 }
 
+function RightSlidePanel({ theme: t, onClose, title, headerStyle, titleStyle, children }) {
+  const [slideOpen, setSlideOpen] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setSlideOpen(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  const panelWidth = 420;
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 1000,
+        pointerEvents: 'auto',
+      }}
+    >
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onClose}
+        onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'rgba(0,0,0,0.35)',
+          opacity: slideOpen ? 1 : 0,
+          transition: 'opacity 0.2s ease',
+        }}
+        aria-label="Close"
+      />
+      <div
+        style={{
+          position: 'absolute',
+          right: 0,
+          top: 0,
+          bottom: 0,
+          width: panelWidth,
+          maxWidth: '90vw',
+          background: t.color.surface,
+          boxShadow: '-4px 0 24px rgba(0,0,0,0.18)',
+          transform: slideOpen ? 'translateX(0)' : 'translateX(100%)',
+          transition: 'transform 0.25s ease',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ ...headerStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <h2 style={titleStyle}>{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'inherit',
+              cursor: 'pointer',
+              padding: 4,
+              fontSize: 20,
+              lineHeight: 1,
+              opacity: 0.9,
+            }}
+          >
+            ×
+          </button>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function nextId() {
   return String(Date.now());
 }
 
 export default function Users() {
   const navigate = useNavigate();
-  const formCardRef = useRef(null);
   const nameInputRef = useRef(null);
   const [currentAccountId, setCurrentAccountId] = useState('');
   const [accounts, setAccounts] = useState([]);
@@ -163,6 +242,8 @@ export default function Users() {
     entity: '',
     organizations: [],
     organization_group_ids: [],
+    country: '',
+    notifications: false,
   });
   const [formPermissions, setFormPermissions] = useState([]);
   const [organizations, setOrganizations] = useState([]);
@@ -178,6 +259,8 @@ export default function Users() {
       entity: '',
       organizations: [],
       organization_group_ids: [],
+      country: '',
+      notifications: false,
     });
     setFormPermissions([]);
     setEditingId(null);
@@ -259,6 +342,8 @@ export default function Users() {
       entity: rec.entity_id || rec.entity || '',
       organizations: Array.isArray(rec.organizations) ? [...rec.organizations] : [],
       organization_group_ids: Array.isArray(rec.organization_group_ids) ? [...rec.organization_group_ids] : [],
+      country: rec.country || '',
+      notifications: !!rec.notifications,
     });
     fetchUserPermissions(rec.id).then((list) =>
       setFormPermissions((list || []).map((p) => ({ id: p.id, permission_to: p.permission_to || 'account', entity_id: p.entity_id || '', entity_name: p.entity_name || '', role: p.role || 'viewer' })))
@@ -273,7 +358,30 @@ export default function Users() {
   const roleToDisplayName = (role) => (role === 'owner' ? 'Owner' : role === 'viewer' ? 'Viewer' : 'Manager');
 
   const handleUpdate = async () => {
-    if (!editingId || !form.name.trim() || !form.email.trim()) return;
+    if (!editingId || !form.name.trim()) return;
+    const isOwner = records.find((r) => r.id === editingId)?.is_owner === true;
+    if (isOwner) {
+      const res = await updateUser(editingId, {
+        name: form.name.trim(),
+        job_title: (form.job_title || '').trim(),
+        country: form.country || null,
+        notifications: !!form.notifications,
+      });
+      if (res && currentAccountId) {
+        fetchUsers(currentAccountId).then((list) => setRecords(Array.isArray(list) ? list : []));
+      } else if (!res) {
+        setRecords((prev) =>
+          prev.map((r) =>
+            r.id === editingId
+              ? { ...r, name: form.name.trim(), job_title: form.job_title?.trim() ?? r.job_title, country: form.country || r.country, notifications: !!form.notifications }
+              : r
+          )
+        );
+      }
+      resetForm();
+      return;
+    }
+    if (!form.email.trim()) return;
     const orgList = Array.isArray(form.organizations) ? form.organizations : [];
     const groupList = Array.isArray(form.organization_group_ids) ? form.organization_group_ids : [];
     const res = await updateUser(editingId, {
@@ -410,10 +518,8 @@ export default function Users() {
     return { nodes, links };
   }, [records]);
 
-  // Tree layout for graph view: position nodes by "created by" hierarchy (roots top, children below)
-  const graphLayout = useMemo(() => {
+  const { levelMap, childrenMap, parentMap } = useMemo(() => {
     const { nodes, links } = graphData;
-    const idToNode = new Map(nodes.map((n) => [n.id, { ...n }]));
     const targets = new Set(links.map((l) => l.target));
     const roots = nodes.filter((n) => !targets.has(n.id));
     const level = new Map();
@@ -432,20 +538,65 @@ export default function Users() {
       frontier = next;
     }
     nodes.forEach((n) => { if (!level.has(n.id)) level.set(n.id, 0); });
+    const children = new Map();
+    const parent = new Map();
+    links.forEach((l) => {
+      if (!children.has(l.source)) children.set(l.source, []);
+      children.get(l.source).push(l.target);
+      parent.set(l.target, l.source);
+    });
+    return { levelMap: level, childrenMap: children, parentMap: parent };
+  }, [graphData]);
+
+  const [expandedNodes, setExpandedNodes] = useState(() => new Set());
+  const [collapsedNodes, setCollapsedNodes] = useState(() => new Set());
+  const isExpanded = (id) => {
+    const level = levelMap.get(id) ?? 0;
+    if (collapsedNodes.has(id)) return false;
+    if (level <= 1) return true;
+    return expandedNodes.has(id);
+  };
+  const visibleIds = useMemo(() => {
+    const visible = new Set();
+    const parentExpanded = (pid) => {
+      const l = levelMap.get(pid) ?? 0;
+      if (collapsedNodes.has(pid)) return false;
+      return l <= 1 || expandedNodes.has(pid);
+    };
+    const isVisible = (id) => {
+      if (visible.has(id)) return true;
+      const p = parentMap.get(id);
+      if (!p) {
+        visible.add(id);
+        return true;
+      }
+      if (!parentExpanded(p)) return false;
+      if (!isVisible(p)) return false;
+      visible.add(id);
+      return true;
+    };
+    graphData.nodes.forEach((n) => isVisible(n.id));
+    return visible;
+  }, [graphData, levelMap, parentMap, expandedNodes, collapsedNodes]);
+
+  // Tree layout for graph view: position nodes by "created by" hierarchy (roots top, children below)
+  const graphLayout = useMemo(() => {
+    const { nodes } = graphData;
     const byLevel = new Map();
     nodes.forEach((n) => {
-      const L = level.get(n.id) ?? 0;
+      if (!visibleIds.has(n.id)) return;
+      const L = levelMap.get(n.id) ?? 0;
       if (!byLevel.has(L)) byLevel.set(L, []);
       byLevel.get(L).push(n.id);
     });
     const width = 800;
     const height = Math.max(graphHeight, 400);
-    const nodeWidth = 120;
-    const nodeHeight = 36;
+    const nodeWidth = 170;
+    const nodeHeight = 56;
     const padding = 40;
     const positions = {};
     byLevel.forEach((ids, L) => {
-      const y = padding + L * (nodeHeight + 48);
+      const y = padding + L * (nodeHeight + 40);
       const totalW = ids.length * (nodeWidth + 24) - 24;
       const startX = (width - totalW) / 2 + nodeWidth / 2 + 12;
       ids.forEach((id, i) => {
@@ -453,7 +604,12 @@ export default function Users() {
       });
     });
     return { positions, width, height };
-  }, [graphData, graphHeight]);
+  }, [graphData, visibleIds, levelMap, graphHeight]);
+
+  // Search: substring match across columns, highlight, Prev/Next, scroll into view
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+  const searchScrollRefs = useRef({});
 
   const [nodePositions, setNodePositions] = useState({});
   const [draggingNodeId, setDraggingNodeId] = useState(null);
@@ -461,7 +617,7 @@ export default function Users() {
   const draggedRef = useRef(false);
   useEffect(() => {
     setNodePositions({ ...graphLayout.positions });
-  }, [graphData, graphHeight]);
+  }, [graphLayout]);
   const getEffectivePos = (id) => nodePositions[id] ?? graphLayout.positions[id];
   useEffect(() => {
     if (!draggingNodeId || !graphSvgRef.current) return;
@@ -513,6 +669,7 @@ export default function Users() {
     form: { display: 'flex', flexDirection: 'column', gap: 16 },
     field: { display: 'flex', flexDirection: 'column', gap: 4 },
     label: { display: 'block', fontSize: t.fontSize.sm, fontWeight: 500, color: t.color.text, marginBottom: 4 },
+    checkboxRow: { display: 'flex', alignItems: 'center', gap: 8 },
     input: {
       width: '100%',
       padding: '10px 12px',
@@ -572,12 +729,72 @@ export default function Users() {
     return u ? (u.name || u.email || id) : (id.length > 8 ? id.slice(0, 8) + '…' : id);
   };
   const formatDate = (v) => (v ? new Date(v).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '—');
+  const editingRecord = editingId ? records.find((r) => r.id === editingId) : null;
+  const isEditingMasterOwner = editingRecord?.is_owner === true;
+  const searchWord = searchQuery.trim().toLowerCase();
+  const matchIdsGrid = useMemo(() => {
+    if (!searchWord) return [];
+    return records.filter((r) => {
+      const text = [
+        r.name,
+        r.job_title,
+        r.email,
+        accountName(r.account_id),
+        r.is_owner ? 'Owner' : (r.role_name || 'Manager'),
+        userLabel(r.master_owner_user_id),
+        userLabel(r.created_by_user_id),
+        Array.isArray(r.organizations) ? r.organizations.map(orgLabel).join(' ') : '',
+        Array.isArray(r.organization_group_ids) ? r.organization_group_ids.map(groupLabel).join(' ') : '',
+        formatDate(r.created_at),
+      ].join(' ').toLowerCase();
+      return text.includes(searchWord);
+    }).map((r) => String(r.id));
+  }, [records, searchWord, accounts, organizations, groups]);
+  const matchIdsGraph = useMemo(() => {
+    if (!searchWord) return [];
+    return graphData.nodes.filter((n) => {
+      const text = [(n.name || ''), (n.email || ''), (n.role || '')].join(' ').toLowerCase();
+      return text.includes(searchWord);
+    }).map((n) => n.id);
+  }, [graphData.nodes, searchWord]);
+  const matchIds = viewMode === 'graph' ? matchIdsGraph : matchIdsGrid;
+  const matchCount = matchIds.length;
+  const currentMatchId = matchCount > 0 ? matchIds[currentMatchIndex % matchCount] : null;
+  useEffect(() => { setCurrentMatchIndex(0); }, [searchQuery]);
+  useEffect(() => {
+    if (matchCount === 0 || currentMatchId == null) return;
+    const el = searchScrollRefs.current[currentMatchId];
+    if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [currentMatchIndex, currentMatchId, matchCount]);
   const currentUserId = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('sdwan_cms_user_id') : null;
+  const expandIconStroke = '#166534';
 
   return (
     <div style={s.page}>
       <div style={s.header}>
-        <div style={{ ...s.toolbar, flexWrap: 'wrap', gap: 12, marginLeft: 'auto' }}>
+        <div style={{ ...s.toolbar, flexWrap: 'wrap', gap: 12, marginLeft: 'auto', justifyContent: 'flex-end', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <input
+              type="text"
+              placeholder="Search…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{ ...s.input, width: 140 }}
+            />
+            {searchWord && (
+              <>
+                <span style={{ fontSize: t.fontSize.sm, color: t.color.textMuted, whiteSpace: 'nowrap' }}>
+                  {matchCount > 0 ? `${(currentMatchIndex % matchCount) + 1} of ${matchCount}` : '0 matches'}
+                </span>
+                <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '4px 10px' }} onClick={() => setCurrentMatchIndex((i) => (i - 1 + matchCount) % matchCount)} disabled={matchCount === 0}>
+                  Prev
+                </button>
+                <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '4px 10px' }} onClick={() => setCurrentMatchIndex((i) => (i + 1) % matchCount)} disabled={matchCount === 0}>
+                  Next
+                </button>
+              </>
+            )}
+          </div>
           <button
             type="button"
             style={{ ...s.iconBtn, ...(viewMode === 'grid' ? { opacity: 1, borderColor: t.color.primary } : {}) }}
@@ -608,18 +825,15 @@ export default function Users() {
           <button
             type="button"
             style={s.iconBtn}
-            title={formPanelExpanded ? 'Hide create/edit form' : 'Create new user'}
-            aria-label={formPanelExpanded ? 'Hide form' : 'Create new user'}
+            title={formPanelExpanded ? 'Close panel' : 'Create User'}
+            aria-label={formPanelExpanded ? 'Close panel' : 'Create User'}
             onClick={() => {
               if (formPanelExpanded) {
                 setFormPanelExpanded(false);
               } else {
                 resetForm();
                 setFormPanelExpanded(true);
-                requestAnimationFrame(() => {
-                  formCardRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
-                  nameInputRef.current?.focus?.();
-                });
+                requestAnimationFrame(() => { nameInputRef.current?.focus?.(); });
               }
             }}
           >
@@ -629,10 +843,13 @@ export default function Users() {
       </div>
 
       {formPanelExpanded && (
-      <div ref={formCardRef} style={userCard.card}>
-        <div style={userCard.header}>
-          <h2 style={userCard.title}>{editingId ? 'Edit user' : 'Create new user'}</h2>
-        </div>
+      <RightSlidePanel
+        theme={t}
+        onClose={() => setFormPanelExpanded(false)}
+        title={editingId ? 'Edit User' : 'Create User'}
+        headerStyle={userCard.header}
+        titleStyle={userCard.title}
+      >
         <div style={userCard.formContainer}>
           <form
             style={userCard.form}
@@ -661,6 +878,36 @@ export default function Users() {
                 placeholder="Job title *"
               />
             </div>
+            {isEditingMasterOwner && (
+              <>
+                <div style={userCard.field}>
+                  <label style={userCard.label}>Country</label>
+                  <select
+                    value={form.country}
+                    onChange={(e) => setForm((f) => ({ ...f, country: e.target.value }))}
+                    style={userCard.select}
+                  >
+                    <option value="">— Select country —</option>
+                    {countries.map((c) => (
+                      <option key={c.code} value={c.code}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ ...userCard.field, ...userCard.checkboxRow }}>
+                  <input
+                    type="checkbox"
+                    id="user-notifications"
+                    checked={form.notifications}
+                    onChange={(e) => setForm((f) => ({ ...f, notifications: e.target.checked }))}
+                    style={{ margin: 0 }}
+                  />
+                  <label htmlFor="user-notifications" style={{ ...userCard.label, marginBottom: 0 }}>Notifications</label>
+                </div>
+                <p style={{ margin: 0, fontSize: t.fontSize.sm, color: t.color.textMuted }}>
+                  Only Name, Job Title, Country and Notifications can be changed for the Master-Owner.
+                </p>
+              </>
+            )}
             <div style={userCard.field}>
               <input
                 type="email"
@@ -669,10 +916,16 @@ export default function Users() {
                 style={userCard.input}
                 placeholder="Email *"
                 disabled={!!editingId}
+                readOnly={!!editingId}
               />
             </div>
             <div style={userCard.field}>
-              <select value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} style={userCard.select}>
+              <select
+                value={form.role}
+                onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
+                style={userCard.select}
+                disabled={!!editingId && isEditingMasterOwner}
+              >
                 {ROLE_OPTIONS_ACCOUNT.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
@@ -689,6 +942,7 @@ export default function Users() {
               placeholder="Sites"
               styles={{ formRow: userCard.field, label: userCard.label, select: userCard.select }}
               theme={t}
+              disabled={!!editingId && isEditingMasterOwner}
             />
             <MultiCheckboxDropdown
               label=""
@@ -698,6 +952,7 @@ export default function Users() {
               placeholder="Site Groups"
               styles={{ formRow: userCard.field, label: userCard.label, select: userCard.select }}
               theme={t}
+              disabled={!!editingId && isEditingMasterOwner}
             />
 
             {editingId && (
@@ -708,6 +963,7 @@ export default function Users() {
                       value={row.permission_to}
                       onChange={(e) => updatePermissionRow(index, 'permission_to', e.target.value)}
                       style={{ ...userCard.select, width: 130 }}
+                      disabled={isEditingMasterOwner}
                     >
                       {PERMISSION_TO_OPTIONS.map((o) => (
                         <option key={o.value} value={o.value}>{o.label}</option>
@@ -721,6 +977,7 @@ export default function Users() {
                         updatePermissionRow(index, 'entity_name', opt ? opt.name : '');
                       }}
                       style={{ ...userCard.select, width: 180 }}
+                      disabled={isEditingMasterOwner}
                     >
                       <option value="">— Select —</option>
                       {row.entity_id && !entityOptions(row.permission_to).some((o) => o.id === row.entity_id) && (
@@ -734,12 +991,13 @@ export default function Users() {
                       value={row.role}
                       onChange={(e) => updatePermissionRow(index, 'role', e.target.value)}
                       style={{ ...userCard.select, width: 110 }}
+                      disabled={isEditingMasterOwner}
                     >
                       {roleOptions(row.permission_to).map((o) => (
                         <option key={o.value} value={o.value}>{o.label}</option>
                       ))}
                     </select>
-                    <button type="button" style={{ ...s.btn, ...s.btnDanger, padding: '6px 10px' }} onClick={() => removePermissionRow(index)}>
+                    <button type="button" style={{ ...s.btn, ...s.btnDanger, padding: '6px 10px' }} onClick={() => removePermissionRow(index)} disabled={isEditingMasterOwner}>
                       Remove
                     </button>
                   </div>
@@ -762,7 +1020,7 @@ export default function Users() {
             </div>
           </form>
         </div>
-      </div>
+      </RightSlidePanel>
       )}
 
       <div style={{ flex: 1, minHeight: 0, overflow: viewMode === 'graph' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column' }}>
@@ -786,87 +1044,209 @@ export default function Users() {
                 <path d="M0,0 L8,4 L0,8 Z" fill={t.color.textMuted || t.color.text} />
               </marker>
             </defs>
-            {graphData.links.map((link, i) => {
-              const src = getEffectivePos(link.source);
-              const tgt = getEffectivePos(link.target);
-              if (!src || !tgt) return null;
-              return (
-                <line
-                  key={i}
-                  x1={src.x}
-                  y1={src.y}
-                  x2={tgt.x}
-                  y2={tgt.y - 22}
-                  stroke={t.color.border}
-                  strokeWidth={1.5}
-                  markerEnd="url(#arrow)"
-                />
-              );
-            })}
-            {graphData.nodes.map((node) => {
-              const pos = getEffectivePos(node.id);
-              if (!pos) return null;
-              const rec = records.find((r) => String(r.id) === node.id);
-              const label = node.name || node.id;
-              const roleLabel = node.role || '';
-              const roleFill = roleLabel === 'Owner' ? '#fef3c7' : roleLabel === 'Manager' ? '#dbeafe' : roleLabel === 'Viewer' ? '#d1fae5' : '#f3f4f6';
-              const roleStroke = roleLabel === 'Owner' ? '#d97706' : roleLabel === 'Manager' ? '#2563eb' : roleLabel === 'Viewer' ? '#059669' : t.color.border;
-              const nodeW = 120;
-              const nodeH = roleLabel ? 44 : 36;
-              return (
-                <g
-                  key={node.id}
-                  style={{ cursor: draggingNodeId ? 'grabbing' : rec ? 'grab' : 'default' }}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    draggedRef.current = false;
-                    setDraggingNodeId(node.id);
-                  }}
-                  onClick={() => {
-                    if (draggedRef.current) return;
-                    if (rec) handleEdit(rec);
-                    draggedRef.current = false;
-                  }}
-                >
-                  <rect
-                    x={pos.x - nodeW / 2}
-                    y={pos.y - nodeH / 2}
-                    width={nodeW}
-                    height={nodeH}
-                    rx={6}
-                    fill={roleFill}
-                    stroke={roleStroke}
+            {graphData.links
+              .filter((link) => visibleIds.has(link.source) && visibleIds.has(link.target))
+              .map((link, i) => {
+                const src = getEffectivePos(link.source);
+                const tgt = getEffectivePos(link.target);
+                if (!src || !tgt) return null;
+                const nodeH = 56;
+                return (
+                  <line
+                    key={i}
+                    x1={src.x}
+                    y1={src.y}
+                    x2={tgt.x}
+                    y2={tgt.y - nodeH / 2}
+                    stroke={t.color.border}
                     strokeWidth={1.5}
+                    markerEnd="url(#arrow)"
                   />
-                  <text
-                    x={pos.x}
-                    y={roleLabel ? pos.y - 6 : pos.y}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    fill="#1f2937"
-                    fontSize={13}
-                    fontWeight={600}
-                    style={{ pointerEvents: 'none', userSelect: 'none', fontFamily: 'inherit' }}
+                );
+              })}
+            {graphData.nodes
+              .filter((node) => visibleIds.has(node.id))
+              .map((node) => {
+                const pos = getEffectivePos(node.id);
+                if (!pos) return null;
+                const rec = records.find((r) => String(r.id) === node.id);
+                const roleLabel = node.role || '';
+                const roleFill = roleLabel === 'Owner' ? '#fef3c7' : roleLabel === 'Manager' ? '#dbeafe' : roleLabel === 'Viewer' ? '#d1fae5' : '#f3f4f6';
+                const roleStroke = roleLabel === 'Owner' ? '#d97706' : roleLabel === 'Manager' ? '#2563eb' : roleLabel === 'Viewer' ? '#059669' : t.color.border;
+                const nodeW = 170;
+                const nodeH = 56;
+                const hasChildren = (childrenMap.get(node.id)?.length ?? 0) > 0;
+                const expanded = isExpanded(node.id);
+                const btnSize = 18;
+                const numActionBtns = rec ? (currentUserId === rec.id ? 2 : (rec.is_owner ? 3 : 4)) : 0;
+                const actionsW = numActionBtns * btnSize;
+                return (
+                  <g
+                    key={node.id}
+                    ref={(el) => { if (el) searchScrollRefs.current[node.id] = el; }}
+                    style={{ cursor: draggingNodeId ? 'grabbing' : rec ? 'grab' : 'default' }}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      draggedRef.current = false;
+                      setDraggingNodeId(node.id);
+                    }}
+                    onClick={() => {
+                      if (draggedRef.current) return;
+                      if (rec) handleEdit(rec);
+                      draggedRef.current = false;
+                    }}
                   >
-                    {label.length > 16 ? label.slice(0, 14) + '…' : label}
-                  </text>
-                  {roleLabel ? (
-                    <text
-                      x={pos.x}
-                      y={pos.y + 10}
-                      textAnchor="middle"
-                      dominantBaseline="middle"
-                      fill="#4b5563"
-                      fontSize={10}
-                      style={{ pointerEvents: 'none', userSelect: 'none' }}
+                    {currentMatchId === node.id && (
+                      <rect
+                        x={pos.x - nodeW / 2 - 4}
+                        y={pos.y - nodeH / 2 - 4}
+                        width={nodeW + 8}
+                        height={nodeH + 8}
+                        rx={10}
+                        fill="none"
+                        stroke="#b45309"
+                        strokeWidth={5}
+                      />
+                    )}
+                    <rect
+                      x={pos.x - nodeW / 2}
+                      y={pos.y - nodeH / 2}
+                      width={nodeW}
+                      height={nodeH}
+                      rx={6}
+                      fill={roleFill}
+                      stroke={currentMatchId === node.id ? '#b45309' : roleStroke}
+                      strokeWidth={currentMatchId === node.id ? 3 : 1.5}
+                    />
+                    <foreignObject
+                      x={pos.x - nodeW / 2}
+                      y={pos.y - nodeH / 2}
+                      width={nodeW}
+                      height={nodeH}
+                      style={{ overflow: 'hidden', pointerEvents: 'none' }}
                     >
-                      {roleLabel}
-                    </text>
-                  ) : null}
-                  <title>{`${node.name}${node.email ? ` (${node.email})` : ''}${node.role ? ` · ${node.role}` : ''}`}</title>
-                </g>
-              );
-            })}
+                      <div
+                        xmlns="http://www.w3.org/1999/xhtml"
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '4px 8px',
+                          wordBreak: 'break-word',
+                          overflow: 'hidden',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: '#1f2937',
+                          textAlign: 'center',
+                          lineHeight: 1.25,
+                          boxSizing: 'border-box',
+                        }}
+                      >
+                        <span>{node.name || node.id}</span>
+                        {roleLabel ? <span style={{ fontSize: 10, color: '#4b5563', fontWeight: 400 }}>{roleLabel}</span> : null}
+                      </div>
+                    </foreignObject>
+                    {rec && (
+                      <foreignObject
+                        x={pos.x - nodeW / 2}
+                        y={pos.y - nodeH / 2}
+                        width={actionsW}
+                        height={btnSize}
+                        style={{ overflow: 'visible', pointerEvents: 'all' }}
+                      >
+                        <div
+                          xmlns="http://www.w3.org/1999/xhtml"
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'flex-start',
+                            gap: 2,
+                            width: '100%',
+                            height: '100%',
+                            background: 'transparent',
+                          }}
+                        >
+                          {currentUserId !== rec.id && (
+                            <button
+                              type="button"
+                              title={rec.enabled ? 'Disable user' : 'Enable user'}
+                              style={{ ...s.iconBtn, padding: 0, width: btnSize, height: btnSize, minWidth: btnSize, minHeight: btnSize }}
+                              onClick={(e) => { e.stopPropagation(); handleToggleEnable(rec); }}
+                            >
+                              {rec.enabled ? <IconBlocked size={12} /> : <IconCheck size={12} />}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            title="Send reset password email"
+                            style={{ ...s.iconBtn, padding: 0, width: btnSize, height: btnSize, minWidth: btnSize, minHeight: btnSize }}
+                            onClick={(e) => { e.stopPropagation(); handleResetPassword(rec); }}
+                          >
+                            <IconInfo size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            title="Edit User"
+                            style={{ ...s.iconBtn, padding: 0, width: btnSize, height: btnSize, minWidth: btnSize, minHeight: btnSize }}
+                            onClick={(e) => { e.stopPropagation(); handleEdit(rec); }}
+                          >
+                            <IconEdit size={12} />
+                          </button>
+                          {!rec.is_owner && (
+                            <button
+                              type="button"
+                              title="Delete user"
+                              style={{ ...s.iconBtn, padding: 0, width: btnSize, height: btnSize, minWidth: btnSize, minHeight: btnSize }}
+                              onClick={(e) => { e.stopPropagation(); handleDelete(rec.id); }}
+                            >
+                              <IconTrash size={12} />
+                            </button>
+                          )}
+                        </div>
+                      </foreignObject>
+                    )}
+                    {hasChildren && (
+                      <g
+                        style={{ cursor: 'pointer', pointerEvents: 'all' }}
+                        onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          const level = levelMap.get(node.id) ?? 0;
+                          if (level <= 1) {
+                            setCollapsedNodes((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(node.id)) next.delete(node.id);
+                              else next.add(node.id);
+                              return next;
+                            });
+                          } else {
+                            setExpandedNodes((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(node.id)) next.delete(node.id);
+                              else next.add(node.id);
+                              return next;
+                            });
+                          }
+                        }}
+                        transform={`translate(${pos.x + nodeW / 2 - 9}, ${pos.y - nodeH / 2 + 9})`}
+                      >
+                        <circle r={7} fill="transparent" stroke={t.color.border} strokeWidth={1.2} />
+                        {expanded ? (
+                          <path d="M -3 0 L 3 0" stroke={expandIconStroke} strokeWidth={1.5} strokeLinecap="round" />
+                        ) : (
+                          <path d="M -3 0 L 3 0 M 0 -3 L 0 3" stroke={expandIconStroke} strokeWidth={1.5} strokeLinecap="round" />
+                        )}
+                      </g>
+                    )}
+                    <title>{`${node.name}${node.email ? ` (${node.email})` : ''}${node.role ? ` · ${node.role}` : ''}`}</title>
+                  </g>
+                );
+              })}
           </svg>
         </div>
       ) : viewMode === 'grid' ? (
@@ -885,7 +1265,7 @@ export default function Users() {
             <span>Action</span>
           </div>
           {records.map((r) => (
-            <div key={r.id} style={s.grid(gridCols)}>
+            <div key={r.id} ref={(el) => { if (el) searchScrollRefs.current[String(r.id)] = el; }} style={{ ...s.grid(gridCols), ...(currentMatchId === String(r.id) ? { backgroundColor: '#fef3c7', borderLeft: '4px solid #b45309', outline: '2px solid #d97706', outlineOffset: '-2px', color: '#000' } : {}) }}>
               <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name || '—'}</span>
               <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.job_title || '—'}</span>
               <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.email}</span>
@@ -915,10 +1295,7 @@ export default function Users() {
                 >
                   <IconInfo size={16} />
                 </button>
-                <button type="button" style={s.iconBtn} onClick={() => navigate('/inventory/tokens')} title="Generate Token">
-                  <IconKey size={16} />
-                </button>
-                <button type="button" style={s.iconBtn} onClick={() => handleEdit(r)} title="Edit user">
+                <button type="button" style={s.iconBtn} onClick={() => handleEdit(r)} title="Edit User">
                   <IconEdit size={16} />
                 </button>
                 {!r.is_owner && (
@@ -933,7 +1310,7 @@ export default function Users() {
       ) : (
         <div style={{ ...s.ticketList, flex: 1, minHeight: 0, overflow: 'auto' }}>
           {records.map((r) => (
-            <div key={r.id} style={s.ticketCard}>
+            <div key={r.id} ref={(el) => { if (el) searchScrollRefs.current[String(r.id)] = el; }} style={{ ...s.ticketCard, ...(currentMatchId === String(r.id) ? { backgroundColor: '#fef3c7', borderLeft: '6px solid #b45309', boxShadow: '0 0 0 2px #d97706', color: '#000' } : {}) }}>
               <div style={s.ticketMain}>
                 <strong>{r.name || '—'}</strong>
                 <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>{r.email}</span>
@@ -960,10 +1337,7 @@ export default function Users() {
                 <button type="button" style={s.iconBtn} onClick={() => handleResetPassword(r)} title="Send reset password email">
                   <IconInfo size={16} />
                 </button>
-                <button type="button" style={s.iconBtn} onClick={() => navigate('/inventory/tokens')} title="Generate Token">
-                  <IconKey size={16} />
-                </button>
-                <button type="button" style={s.iconBtn} onClick={() => handleEdit(r)} title="Edit user">
+                <button type="button" style={s.iconBtn} onClick={() => handleEdit(r)} title="Edit User">
                   <IconEdit size={16} />
                 </button>
                 {!r.is_owner && (

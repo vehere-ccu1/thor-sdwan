@@ -15,15 +15,6 @@ import {
   deleteOrganization,
 } from '../../api/client';
 
-const TUNNEL_KEY_METHODS = [
-  { value: 'ikev2', label: 'IKEv2' },
-  { value: 'ikev1', label: 'IKEv1' },
-  { value: 'PSK', label: 'PSK' },
-  { value: 'Certificate', label: 'Certificate' },
-  { value: 'EAP', label: 'EAP' },
-  { value: '', label: '— Select —' },
-];
-
 function nextId() {
   return String(Date.now());
 }
@@ -48,7 +39,6 @@ export default function Organizations() {
     group_id: '',
     name: '',
     group_name: '',
-    tunnel_key_exchange: 'ikev2',
     is_default: false,
   });
 
@@ -58,7 +48,6 @@ export default function Organizations() {
       group_id: '',
       name: '',
       group_name: '',
-      tunnel_key_exchange: 'ikev2',
       is_default: false,
     });
     setEditingId(null);
@@ -97,7 +86,6 @@ export default function Organizations() {
       group_id: groupId,
       name,
       group_name: form.group_name.trim(),
-      tunnel_key_exchange: form.tunnel_key_exchange || 'ikev2',
       is_default: form.is_default,
     });
     if (res) {
@@ -112,7 +100,6 @@ export default function Organizations() {
           account_id: accountId,
           name: form.name.trim(),
           group_name: form.group_name.trim(),
-          tunnel_key_exchange: form.tunnel_key_exchange || 'ikev2',
           is_default: form.is_default,
         },
       ]);
@@ -127,7 +114,6 @@ export default function Organizations() {
       group_id: rec.group_id || '',
       name: rec.name || '',
       group_name: rec.group_name || '',
-      tunnel_key_exchange: rec.tunnel_key_exchange || 'ikev2',
       is_default: !!rec.is_default,
     });
     setActiveTab('site');
@@ -139,7 +125,6 @@ export default function Organizations() {
       name: form.name.trim(),
       group_id: form.group_id || null,
       group_name: form.group_name,
-      tunnel_key_exchange: form.tunnel_key_exchange || 'ikev2',
       is_default: form.is_default,
     });
     if (res) {
@@ -153,7 +138,6 @@ export default function Organizations() {
                 ...r,
                 name: form.name.trim(),
                 group_name: form.group_name.trim(),
-                tunnel_key_exchange: form.tunnel_key_exchange,
                 is_default: form.is_default,
               }
             : r
@@ -167,8 +151,7 @@ export default function Organizations() {
     if (!window.confirm('Delete this site?')) return;
     const res = await deleteOrganization(id);
     if (res && res.deleted) {
-      setRecords((prev) => prev.filter((r) => r.id !== id));
-      if (currentAccountId) fetchOrganizations(currentAccountId).then((list) => setRecords(Array.isArray(list) ? list : []));
+      setRecords((prev) => prev.filter((r) => String(r.id) !== String(id)));
     }
   };
 
@@ -184,16 +167,16 @@ export default function Organizations() {
     if (!window.confirm('Delete this site group?')) return;
     const res = await deleteGroup(id);
     if (res && res.deleted) {
-      setGroups((prev) => prev.filter((gr) => gr.id !== id));
-      if (currentAccountId) fetchGroups(currentAccountId).then((list) => setGroups(Array.isArray(list) ? list : []));
+      setGroups((prev) => prev.filter((gr) => String(gr.id) !== String(id)));
     }
   };
 
   // Site groups grid: Name, Parent group, Created by, Created on, Action
   const gridColsGroups = 'minmax(0,1.5fr) minmax(0,1.5fr) minmax(100px,1fr) minmax(120px,1fr) 120px';
-  // Sites grid: Site Name, Site Group, Master Owner, Created by, Created on, Key Exchange, Action
-  const gridCols = 'minmax(0,1.2fr) minmax(0,1.2fr) minmax(0,1fr) minmax(100px,1fr) minmax(120px,1fr) 90px 120px';
+  // Sites grid: Site Name, Site Group, Master Owner, Created by, Created on, Action
+  const gridCols = 'minmax(0,1.2fr) minmax(0,1.2fr) minmax(0,1fr) minmax(100px,1fr) minmax(120px,1fr) 120px';
   const { theme: t } = useTheme();
+  const expandIconStroke = '#166534';
   const s = getDataPageStyles(t);
   const groupName = (id) => groups.find((g) => g.id === id)?.name || id || '—';
   const masterOrgName = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('sdwan_cms_master_org_name') : null) || '—';
@@ -250,22 +233,8 @@ export default function Organizations() {
     return { nodes, links };
   }, [groups]);
 
-  const graphContainerGroupRef = useRef(null);
-  const [graphHeightGroup, setGraphHeightGroup] = useState(400);
-  useEffect(() => {
-    const el = graphContainerGroupRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      const h = entries[0]?.contentRect?.height;
-      if (typeof h === 'number') setGraphHeightGroup(h);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [activeTab, viewModeGroup]);
-
-  const graphLayoutGroup = useMemo(() => {
+  const { levelMapGroup, childrenMapGroup, parentMapGroup } = useMemo(() => {
     const { nodes, links } = graphDataGroup;
-    const idToNode = new Map(nodes.map((n) => [n.id, { ...n }]));
     const targets = new Set(links.map((l) => l.target));
     const roots = nodes.filter((n) => !targets.has(n.id));
     const level = new Map();
@@ -284,16 +253,75 @@ export default function Organizations() {
       frontier = next;
     }
     nodes.forEach((n) => { if (!level.has(n.id)) level.set(n.id, 0); });
+    const children = new Map();
+    const parent = new Map();
+    links.forEach((l) => {
+      if (!children.has(l.source)) children.set(l.source, []);
+      children.get(l.source).push(l.target);
+      parent.set(l.target, l.source);
+    });
+    return { levelMapGroup: level, childrenMapGroup: children, parentMapGroup: parent };
+  }, [graphDataGroup]);
+
+  const [expandedNodesGroup, setExpandedNodesGroup] = useState(() => new Set());
+  const [collapsedNodesGroup, setCollapsedNodesGroup] = useState(() => new Set());
+
+  const isExpandedGroup = (id) => {
+    const level = levelMapGroup.get(id) ?? 0;
+    if (collapsedNodesGroup.has(id)) return false;
+    if (level <= 1) return true;
+    return expandedNodesGroup.has(id);
+  };
+
+  const visibleIdsGroup = useMemo(() => {
+    const visible = new Set();
+    const parentExpanded = (pid) => {
+      const l = levelMapGroup.get(pid) ?? 0;
+      if (collapsedNodesGroup.has(pid)) return false;
+      return l <= 1 || expandedNodesGroup.has(pid);
+    };
+    const isVisible = (id) => {
+      if (visible.has(id)) return true;
+      const p = parentMapGroup.get(id);
+      if (!p) {
+        visible.add(id);
+        return true;
+      }
+      if (!parentExpanded(p)) return false;
+      if (!isVisible(p)) return false;
+      visible.add(id);
+      return true;
+    };
+    graphDataGroup.nodes.forEach((n) => isVisible(n.id));
+    return visible;
+  }, [graphDataGroup, levelMapGroup, parentMapGroup, expandedNodesGroup, collapsedNodesGroup]);
+
+  const graphContainerGroupRef = useRef(null);
+  const [graphHeightGroup, setGraphHeightGroup] = useState(400);
+  useEffect(() => {
+    const el = graphContainerGroupRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect?.height;
+      if (typeof h === 'number') setGraphHeightGroup(h);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [activeTab, viewModeGroup]);
+
+  const graphLayoutGroup = useMemo(() => {
+    const { nodes, links } = graphDataGroup;
     const byLevel = new Map();
     nodes.forEach((n) => {
-      const L = level.get(n.id) ?? 0;
+      if (!visibleIdsGroup.has(n.id)) return;
+      const L = levelMapGroup.get(n.id) ?? 0;
       if (!byLevel.has(L)) byLevel.set(L, []);
       byLevel.get(L).push(n.id);
     });
     const width = 800;
     const height = Math.max(graphHeightGroup, 400);
-    const nodeWidth = 140;
-    const nodeHeight = 48;
+    const nodeWidth = 170;
+    const nodeHeight = 56;
     const padding = 40;
     const positions = {};
     byLevel.forEach((ids, L) => {
@@ -305,11 +333,12 @@ export default function Organizations() {
       });
     });
     return { positions, width, height };
-  }, [graphDataGroup, graphHeightGroup]);
+  }, [graphDataGroup, visibleIdsGroup, levelMapGroup, graphHeightGroup]);
 
   const [nodePositionsGroup, setNodePositionsGroup] = useState({});
   const [draggingNodeIdGroup, setDraggingNodeIdGroup] = useState(null);
   const graphSvgGroupRef = useRef(null);
+  const draggedRefGroup = useRef(false);
   useEffect(() => {
     setNodePositionsGroup({ ...graphLayoutGroup.positions });
   }, [graphDataGroup, graphHeightGroup]);
@@ -324,6 +353,7 @@ export default function Organizations() {
       return pt.matrixTransform(svg.getScreenCTM().inverse());
     };
     const onMove = (e) => {
+      draggedRefGroup.current = true;
       const p = toSvg(e.clientX, e.clientY);
       setNodePositionsGroup((prev) => ({ ...prev, [draggingNodeIdGroup]: { x: p.x, y: p.y } }));
     };
@@ -370,20 +400,7 @@ export default function Organizations() {
     return { nodes, links };
   }, [groups, records]);
 
-  const graphContainerSiteRef = useRef(null);
-  const [graphHeightSite, setGraphHeightSite] = useState(400);
-  useEffect(() => {
-    const el = graphContainerSiteRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      const h = entries[0]?.contentRect?.height;
-      if (typeof h === 'number') setGraphHeightSite(h);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [activeTab, viewMode]);
-
-  const graphLayoutSite = useMemo(() => {
+  const { levelMapSite, childrenMapSite, parentMapSite } = useMemo(() => {
     const { nodes, links } = graphDataSite;
     const targets = new Set(links.map((l) => l.target));
     const roots = nodes.filter((n) => !targets.has(n.id));
@@ -403,16 +420,75 @@ export default function Organizations() {
       frontier = next;
     }
     nodes.forEach((n) => { if (!level.has(n.id)) level.set(n.id, 0); });
+    const children = new Map();
+    const parent = new Map();
+    links.forEach((l) => {
+      if (!children.has(l.source)) children.set(l.source, []);
+      children.get(l.source).push(l.target);
+      parent.set(l.target, l.source);
+    });
+    return { levelMapSite: level, childrenMapSite: children, parentMapSite: parent };
+  }, [graphDataSite]);
+
+  const [expandedNodesSite, setExpandedNodesSite] = useState(() => new Set());
+  const [collapsedNodesSite, setCollapsedNodesSite] = useState(() => new Set());
+
+  const isExpandedSite = (id) => {
+    const level = levelMapSite.get(id) ?? 0;
+    if (collapsedNodesSite.has(id)) return false;
+    if (level <= 1) return true;
+    return expandedNodesSite.has(id);
+  };
+
+  const visibleIdsSite = useMemo(() => {
+    const visible = new Set();
+    const parentExpanded = (pid) => {
+      const l = levelMapSite.get(pid) ?? 0;
+      if (collapsedNodesSite.has(pid)) return false;
+      return l <= 1 || expandedNodesSite.has(pid);
+    };
+    const isVisible = (id) => {
+      if (visible.has(id)) return true;
+      const p = parentMapSite.get(id);
+      if (!p) {
+        visible.add(id);
+        return true;
+      }
+      if (!parentExpanded(p)) return false;
+      if (!isVisible(p)) return false;
+      visible.add(id);
+      return true;
+    };
+    graphDataSite.nodes.forEach((n) => isVisible(n.id));
+    return visible;
+  }, [graphDataSite, levelMapSite, parentMapSite, expandedNodesSite, collapsedNodesSite]);
+
+  const graphContainerSiteRef = useRef(null);
+  const [graphHeightSite, setGraphHeightSite] = useState(400);
+  useEffect(() => {
+    const el = graphContainerSiteRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect?.height;
+      if (typeof h === 'number') setGraphHeightSite(h);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [activeTab, viewMode]);
+
+  const graphLayoutSite = useMemo(() => {
+    const { nodes } = graphDataSite;
     const byLevel = new Map();
     nodes.forEach((n) => {
-      const L = level.get(n.id) ?? 0;
+      if (!visibleIdsSite.has(n.id)) return;
+      const L = levelMapSite.get(n.id) ?? 0;
       if (!byLevel.has(L)) byLevel.set(L, []);
       byLevel.get(L).push(n.id);
     });
     const width = 800;
     const height = Math.max(graphHeightSite, 400);
-    const nodeWidth = 140;
-    const nodeHeight = 48;
+    const nodeWidth = 170;
+    const nodeHeight = 56;
     const padding = 40;
     const positions = {};
     byLevel.forEach((ids, L) => {
@@ -424,11 +500,12 @@ export default function Organizations() {
       });
     });
     return { positions, width, height };
-  }, [graphDataSite, graphHeightSite]);
+  }, [graphDataSite, visibleIdsSite, levelMapSite, graphHeightSite]);
 
   const [nodePositionsSite, setNodePositionsSite] = useState({});
   const [draggingNodeIdSite, setDraggingNodeIdSite] = useState(null);
   const graphSvgSiteRef = useRef(null);
+  const draggedRefSite = useRef(false);
   useEffect(() => {
     setNodePositionsSite({ ...graphLayoutSite.positions });
   }, [graphDataSite, graphHeightSite]);
@@ -443,6 +520,7 @@ export default function Organizations() {
       return pt.matrixTransform(svg.getScreenCTM().inverse());
     };
     const onMove = (e) => {
+      draggedRefSite.current = true;
       const p = toSvg(e.clientX, e.clientY);
       setNodePositionsSite((prev) => ({ ...prev, [draggingNodeIdSite]: { x: p.x, y: p.y } }));
     };
@@ -470,43 +548,108 @@ export default function Organizations() {
   const organizationSiteGroupLabel = (r) =>
     hasNoGroup(r.group_id) ? '—' : (getGroupPathLabel(r.group_id) || r.group_name_resolved || r.group_name || '—');
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+  const searchScrollRefs = useRef({});
+
+  const searchWord = searchQuery.trim().toLowerCase();
+  const matchIdsGroup = useMemo(() => {
+    if (!searchWord) return [];
+    const ids = [];
+    if ('master-organization'.includes(searchWord) || 'master'.includes(searchWord)) ids.push(MASTER_ORG_ROOT_ID);
+    groups.forEach((g) => {
+      const text = [
+        g.name,
+        hasNoGroup(g.parent_group_id) ? '' : getGroupPathLabel(g.parent_group_id),
+        userEmail(g.created_by_user_id),
+        formatDate(g.created_at),
+      ].join(' ').toLowerCase();
+      if (text.includes(searchWord)) ids.push(String(g.id));
+    });
+    return ids;
+  }, [groups, searchWord]);
+
+  const matchIdsSiteGrid = useMemo(() => {
+    if (!searchWord) return [];
+    return records.filter((r) => {
+      const text = [
+        r.name,
+        organizationSiteGroupLabel(r),
+        masterOwnerDisplay(r),
+        userEmail(r.created_by_user_id),
+        formatDate(r.created_at),
+      ].join(' ').toLowerCase();
+      return text.includes(searchWord);
+    }).map((r) => String(r.id));
+  }, [records, searchWord]);
+
+  const matchIdsSiteGraph = useMemo(() => {
+    if (!searchWord) return [];
+    return graphDataSite.nodes.filter((n) =>
+      (n.name || '').toLowerCase().includes(searchWord)
+    ).map((n) => n.id);
+  }, [graphDataSite.nodes, searchWord]);
+
+  const matchIds = activeTab === 'group'
+    ? (viewModeGroup === 'graph' ? matchIdsGroup : matchIdsGroup)
+    : (viewMode === 'graph' ? matchIdsSiteGraph : matchIdsSiteGrid);
+  const matchCount = matchIds.length;
+  const currentMatchId = matchCount > 0 ? matchIds[currentMatchIndex % matchCount] : null;
+
+  useEffect(() => {
+    setCurrentMatchIndex(0);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (matchCount === 0 || currentMatchId == null) return;
+    const el = searchScrollRefs.current[currentMatchId];
+    if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [currentMatchIndex, currentMatchId, matchCount]);
+
   return (
     <div style={s.page}>
-      {/* Tab panel: Create site group | Create new site */}
+      {/* Link-style switcher: Site Group | Site */}
       <div style={{ ...s.formCard, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', marginBottom: 0 }}>
-        <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${t.color.border}`, marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
           <button
             type="button"
             onClick={() => setActiveTab('group')}
             style={{
-              ...s.btn,
-              ...s.btnSecondary,
-              borderRadius: 0,
-              borderBottom: activeTab === 'group' ? `2px solid ${t.button.primaryBg}` : '2px solid transparent',
-              fontWeight: activeTab === 'group' ? 600 : 400,
-              marginBottom: -1,
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              fontFamily: t.fontFamily.sans,
+              fontSize: t.fontSize.base,
+              color: '#2563eb',
+              textDecoration: activeTab === 'group' ? 'underline' : 'none',
+              cursor: 'pointer',
+              fontWeight: activeTab === 'group' ? 700 : 400,
             }}
           >
-            Create site group
+            Site Group
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('site')}
             style={{
-              ...s.btn,
-              ...s.btnSecondary,
-              borderRadius: 0,
-              borderBottom: activeTab === 'site' ? `2px solid ${t.button.primaryBg}` : '2px solid transparent',
-              fontWeight: activeTab === 'site' ? 600 : 400,
-              marginBottom: -1,
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              fontFamily: t.fontFamily.sans,
+              fontSize: t.fontSize.base,
+              color: '#2563eb',
+              textDecoration: activeTab === 'site' ? 'underline' : 'none',
+              cursor: 'pointer',
+              fontWeight: activeTab === 'site' ? 700 : 400,
             }}
           >
-            Create new site
+            Site
           </button>
         </div>
         {activeTab === 'group' ? (
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'flex-end', gap: 12, marginBottom: 0 }}>
+            <div style={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'flex-end', gap: 12, marginBottom: 0, justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'flex-end', gap: 12, minWidth: 0 }}>
               <div style={{ ...s.formRow, marginBottom: 0, flex: '1 1 0', minWidth: 0, maxWidth: 220 }}>
                 <input
                   type="text"
@@ -516,7 +659,7 @@ export default function Organizations() {
                   placeholder="Site group"
                 />
               </div>
-              <div style={{ ...s.formRow, marginBottom: 0, flex: '1 1 0', minWidth: 0, maxWidth: 220 }}>
+              <div style={{ ...s.formRow, marginBottom: 0, flex: '1 1 0', minWidth: 0, maxWidth: 320 }}>
                 <select
                   value={groupForm.parent_group_id}
                   onChange={(e) => setGroupForm((g) => ({ ...g, parent_group_id: e.target.value }))}
@@ -577,11 +720,34 @@ export default function Organizations() {
                   </button>
                 ) : null}
               </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                <input
+                  type="text"
+                  placeholder="Search…"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  style={{ ...s.input, width: 140 }}
+                />
+                {searchWord && (
+                  <>
+                    <span style={{ fontSize: t.fontSize.sm, color: t.color.textMuted, whiteSpace: 'nowrap' }}>
+                      {matchCount > 0 ? `${(currentMatchIndex % matchCount) + 1} of ${matchCount}` : '0 matches'}
+                    </span>
+                    <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '4px 10px' }} onClick={() => setCurrentMatchIndex((i) => (i - 1 + matchCount) % matchCount)} disabled={matchCount === 0}>
+                      Prev
+                    </button>
+                    <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '4px 10px' }} onClick={() => setCurrentMatchIndex((i) => (i + 1) % matchCount)} disabled={matchCount === 0}>
+                      Next
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
             <div style={{ marginTop: 16, marginBottom: 8, display: 'flex', justifyContent: 'flex-end', gap: 0 }}>
               <button
                 type="button"
-                style={{ ...s.iconBtn, ...(viewModeGroup === 'grid' ? { opacity: 1, borderColor: t.color.primary } : {}) }}
+                style={{ ...s.iconBtn, ...(viewModeGroup === 'grid' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }}
                 onClick={() => setViewModeGroup('grid')}
                 title="Grid view"
                 aria-label="Grid view"
@@ -590,7 +756,7 @@ export default function Organizations() {
               </button>
               <button
                 type="button"
-                style={{ ...s.iconBtn, ...(viewModeGroup === 'ticket' ? { opacity: 1, borderColor: t.color.primary } : {}) }}
+                style={{ ...s.iconBtn, ...(viewModeGroup === 'ticket' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }}
                 onClick={() => setViewModeGroup('ticket')}
                 title="Ticket view"
                 aria-label="Ticket view"
@@ -599,7 +765,7 @@ export default function Organizations() {
               </button>
               <button
                 type="button"
-                style={{ ...s.iconBtn, ...(viewModeGroup === 'graph' ? { opacity: 1, borderColor: t.color.primary } : {}) }}
+                style={{ ...s.iconBtn, ...(viewModeGroup === 'graph' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }}
                 onClick={() => setViewModeGroup('graph')}
                 title="Link view (Name vs Parent group)"
                 aria-label="Link view"
@@ -629,89 +795,195 @@ export default function Organizations() {
                         <path d="M0,0 L8,4 L0,8 Z" fill={t.color.textMuted || t.color.text} />
                       </marker>
                     </defs>
-                    {graphDataGroup.links.map((link, i) => {
-                      const src = getEffectivePosGroup(link.source);
-                      const tgt = getEffectivePosGroup(link.target);
-                      if (!src || !tgt) return null;
-                      const nodeH = 48;
-                      return (
-                        <line
-                          key={i}
-                          x1={src.x}
-                          y1={src.y}
-                          x2={tgt.x}
-                          y2={tgt.y - nodeH / 2}
-                          stroke={t.color.border}
-                          strokeWidth={1.5}
-                          markerEnd="url(#arrow-group)"
-                        />
-                      );
-                    })}
-                    {graphDataGroup.nodes.map((node) => {
-                      const pos = getEffectivePosGroup(node.id);
-                      if (!pos) return null;
-                      const isMaster = node.nodeType === 'master-org';
-                      const fill = isMaster ? '#fef3c7' : '#dbeafe';
-                      const stroke = isMaster ? '#d97706' : '#2563eb';
-                      const nodeW = 140;
-                      const nodeH = 48;
-                      return (
-                        <g
-                          key={node.id}
-                          style={{ cursor: draggingNodeIdGroup ? 'grabbing' : 'grab' }}
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            setDraggingNodeIdGroup(node.id);
-                          }}
-                        >
-                          <rect
-                            x={pos.x - nodeW / 2}
-                            y={pos.y - nodeH / 2}
-                            width={nodeW}
-                            height={nodeH}
-                            rx={6}
-                            fill={fill}
-                            stroke={stroke}
+                    {graphDataGroup.links
+                      .filter((link) => visibleIdsGroup.has(link.source) && visibleIdsGroup.has(link.target))
+                      .map((link, i) => {
+                        const src = getEffectivePosGroup(link.source);
+                        const tgt = getEffectivePosGroup(link.target);
+                        if (!src || !tgt) return null;
+                        const nodeH = 56;
+                        return (
+                          <line
+                            key={`${link.source}-${link.target}-${i}`}
+                            x1={src.x}
+                            y1={src.y}
+                            x2={tgt.x}
+                            y2={tgt.y - nodeH / 2}
+                            stroke={t.color.border}
                             strokeWidth={1.5}
+                            markerEnd="url(#arrow-group)"
                           />
-                          <foreignObject
-                            x={pos.x - nodeW / 2}
-                            y={pos.y - nodeH / 2}
-                            width={nodeW}
-                            height={nodeH}
-                            style={{ overflow: 'hidden', pointerEvents: 'none' }}
+                        );
+                      })}
+                    {graphDataGroup.nodes
+                      .filter((node) => visibleIdsGroup.has(node.id))
+                      .map((node) => {
+                        const pos = getEffectivePosGroup(node.id);
+                        if (!pos) return null;
+                        const isMaster = node.nodeType === 'master-org';
+                        const fill = isMaster ? '#fef3c7' : '#dbeafe';
+                        const stroke = isMaster ? '#d97706' : '#2563eb';
+const nodeW = 170;
+                      const nodeH = 56;
+                      const hasChildren = (childrenMapGroup.get(node.id)?.length ?? 0) > 0;
+                        const expanded = isExpandedGroup(node.id);
+                        const groupRec = node.id !== MASTER_ORG_ROOT_ID ? groups.find((g) => String(g.id) === node.id) : null;
+                        const btnSize = 18;
+                        const numActionBtns = groupRec ? 2 : 0;
+                        const actionsW = numActionBtns * btnSize;
+                        return (
+                          <g
+                            key={node.id}
+                            ref={(el) => { if (el) searchScrollRefs.current[node.id] = el; }}
+                            style={{ cursor: draggingNodeIdGroup ? 'grabbing' : 'grab' }}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              draggedRefGroup.current = false;
+                              setDraggingNodeIdGroup(node.id);
+                            }}
+                            onClick={() => {
+                              if (draggedRefGroup.current) return;
+                              setGroupForm((prev) => ({
+                                ...prev,
+                                parent_group_id: node.id === MASTER_ORG_ROOT_ID ? (defaultGroupId || '') : node.id,
+                              }));
+                              draggedRefGroup.current = false;
+                            }}
                           >
-                            <div
-                              xmlns="http://www.w3.org/1999/xhtml"
-                              style={{
-                                width: '100%',
-                                height: '100%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                padding: '4px 8px',
-                                wordBreak: 'break-word',
-                                overflow: 'hidden',
-                                fontSize: 12,
-                                fontWeight: 600,
-                                color: '#1f2937',
-                                textAlign: 'center',
-                                lineHeight: 1.25,
-                                boxSizing: 'border-box',
-                              }}
+                            {currentMatchId === node.id && (
+                              <rect
+                                x={pos.x - nodeW / 2 - 4}
+                                y={pos.y - nodeH / 2 - 4}
+                                width={nodeW + 8}
+                                height={nodeH + 8}
+                                rx={10}
+                                fill="none"
+                                stroke="#b45309"
+                                strokeWidth={5}
+                              />
+                            )}
+                            <rect
+                              x={pos.x - nodeW / 2}
+                              y={pos.y - nodeH / 2}
+                              width={nodeW}
+                              height={nodeH}
+                              rx={6}
+                              fill={fill}
+                              stroke={currentMatchId === node.id ? '#b45309' : stroke}
+                              strokeWidth={currentMatchId === node.id ? 3 : 1.5}
+                            />
+                            <foreignObject
+                              x={pos.x - nodeW / 2}
+                              y={pos.y - nodeH / 2}
+                              width={nodeW}
+                              height={nodeH}
+                              style={{ overflow: 'hidden', pointerEvents: 'none' }}
                             >
-                              {node.name || node.id}
-                            </div>
-                          </foreignObject>
-                        </g>
-                      );
-                    })}
+                              <div
+                                xmlns="http://www.w3.org/1999/xhtml"
+                                style={{
+                                  width: '100%',
+                                  height: '100%',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  padding: '4px 8px',
+                                  wordBreak: 'break-word',
+                                  overflow: 'hidden',
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  color: '#1f2937',
+                                  textAlign: 'center',
+                                  lineHeight: 1.25,
+                                  boxSizing: 'border-box',
+                                }}
+                              >
+                                {node.name || node.id}
+                              </div>
+                            </foreignObject>
+                            {groupRec && (
+                              <foreignObject
+                                x={pos.x - nodeW / 2}
+                                y={pos.y - nodeH / 2}
+                                width={actionsW}
+                                height={btnSize}
+                                style={{ overflow: 'visible', pointerEvents: 'all' }}
+                              >
+                                <div
+                                  xmlns="http://www.w3.org/1999/xhtml"
+                                  style={{
+                                    display: 'flex',
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    justifyContent: 'flex-start',
+                                    gap: 2,
+                                    width: '100%',
+                                    height: '100%',
+                                    background: 'transparent',
+                                  }}
+                                >
+                                  <button
+                                    type="button"
+                                    title="Edit"
+                                    style={{ ...s.iconBtn, padding: 0, width: btnSize, height: btnSize, minWidth: btnSize, minHeight: btnSize }}
+                                    onClick={(e) => { e.stopPropagation(); handleEditGroup(groupRec); }}
+                                  >
+                                    <IconEdit size={12} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    title="Delete"
+                                    style={{ ...s.iconBtn, padding: 0, width: btnSize, height: btnSize, minWidth: btnSize, minHeight: btnSize }}
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteGroup(node.id); }}
+                                  >
+                                    <IconTrash size={12} />
+                                  </button>
+                                </div>
+                              </foreignObject>
+                            )}
+                            {hasChildren && (
+                              <g
+                                style={{ cursor: 'pointer', pointerEvents: 'all' }}
+                                onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  const level = levelMapGroup.get(node.id) ?? 0;
+                                  if (level <= 1) {
+                                    setCollapsedNodesGroup((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(node.id)) next.delete(node.id);
+                                      else next.add(node.id);
+                                      return next;
+                                    });
+                                  } else {
+                                    setExpandedNodesGroup((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(node.id)) next.delete(node.id);
+                                      else next.add(node.id);
+                                      return next;
+                                    });
+                                  }
+                                }}
+                                transform={`translate(${pos.x + nodeW / 2 - 9}, ${pos.y - nodeH / 2 + 9})`}
+                              >
+                                <circle r={7} fill="transparent" stroke={t.color.border} strokeWidth={1.2} />
+                                {expanded ? (
+                                  <path d="M -3 0 L 3 0" stroke={expandIconStroke} strokeWidth={1.5} strokeLinecap="round" />
+                                ) : (
+                                  <path d="M -3 0 L 3 0 M 0 -3 L 0 3" stroke={expandIconStroke} strokeWidth={1.5} strokeLinecap="round" />
+                                )}
+                              </g>
+                            )}
+                          </g>
+                        );
+                      })}
                   </svg>
                 </div>
               ) : viewModeGroup === 'ticket' ? (
                 <div style={s.ticketList}>
                   {groups.map((g) => (
-                    <div key={g.id} style={s.ticketCard}>
+                    <div key={g.id} ref={(el) => { if (el) searchScrollRefs.current[g.id] = el; }} style={{ ...s.ticketCard, ...(currentMatchId === String(g.id) ? { backgroundColor: '#fef3c7', borderLeft: '6px solid #b45309', boxShadow: '0 0 0 2px #d97706', color: '#000' } : {}) }}>
                       <div style={s.ticketMain}>
                         <strong>{g.name || '—'}</strong>
                         <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>
@@ -741,7 +1013,7 @@ export default function Organizations() {
                     <span>Action</span>
                   </div>
                   {groups.map((g) => (
-                    <div key={g.id} style={s.grid(gridColsGroups)}>
+                    <div key={g.id} ref={(el) => { if (el) searchScrollRefs.current[g.id] = el; }} style={{ ...s.grid(gridColsGroups), ...(currentMatchId === String(g.id) ? { backgroundColor: '#fef3c7', borderLeft: '4px solid #b45309', outline: '2px solid #d97706', outlineOffset: '-2px', color: '#000' } : {}) }}>
                       <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.name || '—'}</span>
                       <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {hasNoGroup(g.parent_group_id) ? '—' : getGroupPathLabel(g.parent_group_id)}
@@ -764,8 +1036,9 @@ export default function Organizations() {
           </div>
         ) : (
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'flex-end', gap: 12, marginBottom: 0 }}>
-              <div style={{ ...s.formRow, marginBottom: 0, flex: '1 1 0', minWidth: 0, maxWidth: 200 }}>
+            <div style={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'flex-end', gap: 12, marginBottom: 0, justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'flex-end', gap: 12, minWidth: 0 }}>
+              <div style={{ ...s.formRow, marginBottom: 0, flex: '1 1 0', minWidth: 0, maxWidth: 320 }}>
                 <select
                   value={form.group_id}
                   onChange={(e) => setForm((f) => ({ ...f, group_id: e.target.value }))}
@@ -789,20 +1062,6 @@ export default function Organizations() {
                   placeholder="Site name"
                 />
               </div>
-              <div style={{ ...s.formRow, marginBottom: 0, flex: '1 1 0', minWidth: 0, maxWidth: 200 }}>
-                <select
-                  value={form.tunnel_key_exchange}
-                  onChange={(e) => setForm((f) => ({ ...f, tunnel_key_exchange: e.target.value }))}
-                  style={{ ...s.select, maxWidth: '100%' }}
-                  title="Tunnel Key Exchange Method"
-                >
-                  {TUNNEL_KEY_METHODS.map((opt) => (
-                    <option key={opt.value || '_'} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
               <div style={{ flexShrink: 0, display: 'flex', gap: 8 }}>
                 {editingId ? (
                   <>
@@ -817,6 +1076,29 @@ export default function Organizations() {
                   <button type="button" style={{ ...s.btn, ...s.btnPrimary }} onClick={handleAdd}>
                     Add
                   </button>
+                )}
+              </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                <input
+                  type="text"
+                  placeholder="Search…"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  style={{ ...s.input, width: 140 }}
+                />
+                {searchWord && (
+                  <>
+                    <span style={{ fontSize: t.fontSize.sm, color: t.color.textMuted, whiteSpace: 'nowrap' }}>
+                      {matchCount > 0 ? `${(currentMatchIndex % matchCount) + 1} of ${matchCount}` : '0 matches'}
+                    </span>
+                    <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '4px 10px' }} onClick={() => setCurrentMatchIndex((i) => (i - 1 + matchCount) % matchCount)} disabled={matchCount === 0}>
+                      Prev
+                    </button>
+                    <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '4px 10px' }} onClick={() => setCurrentMatchIndex((i) => (i + 1) % matchCount)} disabled={matchCount === 0}>
+                      Next
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -841,7 +1123,7 @@ export default function Organizations() {
               </button>
               <button
                 type="button"
-                style={{ ...s.iconBtn, ...(viewMode === 'graph' ? { opacity: 1, borderColor: t.color.primary } : {}) }}
+                style={{ ...s.iconBtn, ...(viewMode === 'graph' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }}
                 onClick={() => setViewMode('graph')}
                 title="Link view (Site Name vs Site Group)"
                 aria-label="Link view"
@@ -872,85 +1154,227 @@ export default function Organizations() {
                         <path d="M0,0 L8,4 L0,8 Z" fill={t.color.textMuted || t.color.text} />
                       </marker>
                     </defs>
-                    {graphDataSite.links.map((link, i) => {
-                      const src = getEffectivePosSite(link.source);
-                      const tgt = getEffectivePosSite(link.target);
-                      if (!src || !tgt) return null;
-                      const nodeH = 48;
-                      return (
-                        <line
-                          key={i}
-                          x1={src.x}
-                          y1={src.y}
-                          x2={tgt.x}
-                          y2={tgt.y - nodeH / 2}
-                          stroke={t.color.border}
-                          strokeWidth={1.5}
-                          markerEnd="url(#arrow-site)"
-                        />
-                      );
-                    })}
-                    {graphDataSite.nodes.map((node) => {
-                      const pos = getEffectivePosSite(node.id);
-                      if (!pos) return null;
-                      const isMaster = node.nodeType === 'master-org';
-                      const isGroup = node.nodeType === 'other-group';
-                      const isSite = node.nodeType === 'site';
-                      const fill = isMaster ? '#fef3c7' : isGroup ? '#dbeafe' : '#d1fae5';
-                      const stroke = isMaster ? '#d97706' : isGroup ? '#2563eb' : '#059669';
-                      const nodeW = 140;
-                      const nodeH = 48;
-                      return (
-                        <g
-                          key={node.id}
-                          style={{ cursor: draggingNodeIdSite ? 'grabbing' : 'grab' }}
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            setDraggingNodeIdSite(node.id);
-                          }}
-                        >
-                          <rect
-                            x={pos.x - nodeW / 2}
-                            y={pos.y - nodeH / 2}
-                            width={nodeW}
-                            height={nodeH}
-                            rx={6}
-                            fill={fill}
-                            stroke={stroke}
+                    {graphDataSite.links
+                      .filter((link) => visibleIdsSite.has(link.source) && visibleIdsSite.has(link.target))
+                      .map((link, i) => {
+                        const src = getEffectivePosSite(link.source);
+                        const tgt = getEffectivePosSite(link.target);
+                        if (!src || !tgt) return null;
+                        const nodeH = 56;
+                        return (
+                          <line
+                            key={`${link.source}-${link.target}-${i}`}
+                            x1={src.x}
+                            y1={src.y}
+                            x2={tgt.x}
+                            y2={tgt.y - nodeH / 2}
+                            stroke={t.color.border}
                             strokeWidth={1.5}
+                            markerEnd="url(#arrow-site)"
                           />
-                          <foreignObject
-                            x={pos.x - nodeW / 2}
-                            y={pos.y - nodeH / 2}
-                            width={nodeW}
-                            height={nodeH}
-                            style={{ overflow: 'hidden', pointerEvents: 'none' }}
+                        );
+                      })}
+                    {graphDataSite.nodes
+                      .filter((node) => visibleIdsSite.has(node.id))
+                      .map((node) => {
+                        const pos = getEffectivePosSite(node.id);
+                        if (!pos) return null;
+                        const isMaster = node.nodeType === 'master-org';
+                        const isGroup = node.nodeType === 'other-group';
+                        const isSite = node.nodeType === 'site';
+                        const fill = isMaster ? '#fef3c7' : isGroup ? '#dbeafe' : '#d1fae5';
+                        const stroke = isMaster ? '#d97706' : isGroup ? '#2563eb' : '#059669';
+                        const nodeW = 170;
+                        const nodeH = 56;
+                        const hasChildren = (childrenMapSite.get(node.id)?.length ?? 0) > 0;
+                        const expanded = isExpandedSite(node.id);
+                        const siteRec = isSite ? records.find((r) => String(r.id) === node.id) : null;
+                        const groupRec = isGroup ? groups.find((g) => String(g.id) === node.id) : null;
+                        const showActions = siteRec || groupRec;
+                        const btnSize = 18;
+                        const numActionBtns = siteRec ? 3 : (groupRec ? 2 : 0);
+                        const actionsW = numActionBtns * btnSize;
+                        return (
+                          <g
+                            key={node.id}
+                            ref={(el) => { if (el) searchScrollRefs.current[node.id] = el; }}
+                            style={{ cursor: draggingNodeIdSite ? 'grabbing' : 'grab' }}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              draggedRefSite.current = false;
+                              setDraggingNodeIdSite(node.id);
+                            }}
+                            onClick={() => {
+                              if (draggedRefSite.current) return;
+                              const groupId = isSite && siteRec
+                                ? (siteRec.group_id ? String(siteRec.group_id) : '')
+                                : (node.id === MASTER_ORG_ROOT_ID ? (defaultGroupId || '') : (isGroup ? node.id : ''));
+                              setForm((prev) => ({ ...prev, group_id: groupId }));
+                              draggedRefSite.current = false;
+                            }}
                           >
-                            <div
-                              xmlns="http://www.w3.org/1999/xhtml"
-                              style={{
-                                width: '100%',
-                                height: '100%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                padding: '4px 8px',
-                                wordBreak: 'break-word',
-                                overflow: 'hidden',
-                                fontSize: 12,
-                                fontWeight: 600,
-                                color: '#1f2937',
-                                textAlign: 'center',
-                                lineHeight: 1.25,
-                                boxSizing: 'border-box',
-                              }}
+                            {currentMatchId === node.id && (
+                              <rect
+                                x={pos.x - nodeW / 2 - 4}
+                                y={pos.y - nodeH / 2 - 4}
+                                width={nodeW + 8}
+                                height={nodeH + 8}
+                                rx={10}
+                                fill="none"
+                                stroke="#b45309"
+                                strokeWidth={5}
+                              />
+                            )}
+                            <rect
+                              x={pos.x - nodeW / 2}
+                              y={pos.y - nodeH / 2}
+                              width={nodeW}
+                              height={nodeH}
+                              rx={6}
+                              fill={fill}
+                              stroke={currentMatchId === node.id ? '#b45309' : stroke}
+                              strokeWidth={currentMatchId === node.id ? 3 : 1.5}
+                            />
+                            <foreignObject
+                              x={pos.x - nodeW / 2}
+                              y={pos.y - nodeH / 2}
+                              width={nodeW}
+                              height={nodeH}
+                              style={{ overflow: 'hidden', pointerEvents: 'none' }}
                             >
-                              {node.name || node.id}
-                            </div>
-                          </foreignObject>
-                        </g>
-                      );
-                    })}
+                              <div
+                                xmlns="http://www.w3.org/1999/xhtml"
+                                style={{
+                                  width: '100%',
+                                  height: '100%',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  padding: '4px 8px',
+                                  wordBreak: 'break-word',
+                                  overflow: 'hidden',
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  color: '#1f2937',
+                                  textAlign: 'center',
+                                  lineHeight: 1.25,
+                                  boxSizing: 'border-box',
+                                }}
+                              >
+                                {node.name || node.id}
+                              </div>
+                            </foreignObject>
+                            {showActions && (
+                              <foreignObject
+                                x={pos.x - nodeW / 2}
+                                y={pos.y - nodeH / 2}
+                                width={actionsW}
+                                height={btnSize}
+                                style={{ overflow: 'visible', pointerEvents: 'all' }}
+                              >
+                                <div
+                                  xmlns="http://www.w3.org/1999/xhtml"
+                                  style={{
+                                    display: 'flex',
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    justifyContent: 'flex-start',
+                                    gap: 2,
+                                    width: '100%',
+                                    height: '100%',
+                                    background: 'transparent',
+                                  }}
+                                >
+                                  {siteRec && (
+                                    <button
+                                      type="button"
+                                      title="Generate Token"
+                                      style={{ ...s.iconBtn, padding: 0, width: btnSize, height: btnSize, minWidth: btnSize, minHeight: btnSize }}
+                                      onClick={(e) => { e.stopPropagation(); navigate('/inventory/tokens', { state: { organizationId: siteRec.id } }); }}
+                                    >
+                                      <IconKey size={12} />
+                                    </button>
+                                  )}
+                                  {siteRec && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        title="Edit"
+                                        style={{ ...s.iconBtn, padding: 0, width: btnSize, height: btnSize, minWidth: btnSize, minHeight: btnSize }}
+                                        onClick={(e) => { e.stopPropagation(); handleEdit(siteRec); }}
+                                      >
+                                        <IconEdit size={12} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        title="Delete"
+                                        style={{ ...s.iconBtn, padding: 0, width: btnSize, height: btnSize, minWidth: btnSize, minHeight: btnSize }}
+                                        onClick={(e) => { e.stopPropagation(); handleDelete(siteRec.id); }}
+                                      >
+                                        <IconTrash size={12} />
+                                      </button>
+                                    </>
+                                  )}
+                                  {groupRec && !siteRec && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        title="Edit"
+                                        style={{ ...s.iconBtn, padding: 0, width: btnSize, height: btnSize, minWidth: btnSize, minHeight: btnSize }}
+                                        onClick={(e) => { e.stopPropagation(); handleEditGroup(groupRec); }}
+                                      >
+                                        <IconEdit size={12} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        title="Delete"
+                                        style={{ ...s.iconBtn, padding: 0, width: btnSize, height: btnSize, minWidth: btnSize, minHeight: btnSize }}
+                                        onClick={(e) => { e.stopPropagation(); handleDeleteGroup(node.id); }}
+                                      >
+                                        <IconTrash size={12} />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </foreignObject>
+                            )}
+                            {hasChildren && (
+                              <g
+                                style={{ cursor: 'pointer', pointerEvents: 'all' }}
+                                onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  const level = levelMapSite.get(node.id) ?? 0;
+                                  if (level <= 1) {
+                                    setCollapsedNodesSite((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(node.id)) next.delete(node.id);
+                                      else next.add(node.id);
+                                      return next;
+                                    });
+                                  } else {
+                                    setExpandedNodesSite((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(node.id)) next.delete(node.id);
+                                      else next.add(node.id);
+                                      return next;
+                                    });
+                                  }
+                                }}
+                                transform={`translate(${pos.x + nodeW / 2 - 9}, ${pos.y - nodeH / 2 + 9})`}
+                              >
+                                <circle r={7} fill="transparent" stroke={t.color.border} strokeWidth={1.2} />
+                                {expanded ? (
+                                  <path d="M -3 0 L 3 0" stroke={expandIconStroke} strokeWidth={1.5} strokeLinecap="round" />
+                                ) : (
+                                  <path d="M -3 0 L 3 0 M 0 -3 L 0 3" stroke={expandIconStroke} strokeWidth={1.5} strokeLinecap="round" />
+                                )}
+                              </g>
+                            )}
+                          </g>
+                        );
+                      })}
                   </svg>
                 </div>
                 )
@@ -964,17 +1388,15 @@ export default function Organizations() {
                     <span>Master Owner</span>
                     <span>Created by</span>
                     <span>Created on</span>
-                    <span>Key Exchange</span>
                     <span>Action</span>
                   </div>
                   {records.map((r) => (
-                    <div key={r.id} style={s.grid(gridCols)}>
+                    <div key={r.id} ref={(el) => { if (el) searchScrollRefs.current[String(r.id)] = el; }} style={{ ...s.grid(gridCols), ...(currentMatchId === String(r.id) ? { backgroundColor: '#fef3c7', borderLeft: '4px solid #b45309', outline: '2px solid #d97706', outlineOffset: '-2px', color: '#000' } : {}) }}>
                       <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
                       <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{organizationSiteGroupLabel(r)}</span>
                       <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{masterOwnerDisplay(r)}</span>
                       <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{userEmail(r.created_by_user_id)}</span>
                       <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatDate(r.created_at)}</span>
-                      <span>{r.tunnel_key_exchange || '—'}</span>
                       <div style={s.actions}>
                         <button type="button" style={s.iconBtn} onClick={() => navigate('/inventory/tokens', { state: { organizationId: r.id } })} title="Generate Token">
                           <IconKey size={16} />
@@ -992,7 +1414,7 @@ export default function Organizations() {
               ) : (
                 <div style={s.ticketList}>
                   {records.map((r) => (
-                    <div key={r.id} style={s.ticketCard}>
+                    <div key={r.id} ref={(el) => { if (el) searchScrollRefs.current[String(r.id)] = el; }} style={{ ...s.ticketCard, ...(currentMatchId === String(r.id) ? { backgroundColor: '#fef3c7', borderLeft: '6px solid #b45309', boxShadow: '0 0 0 2px #d97706', color: '#000' } : {}) }}>
                       <div style={s.ticketMain}>
                         <strong>{r.name}</strong>
                         <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>
@@ -1001,7 +1423,6 @@ export default function Organizations() {
                         <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>Master Owner: {masterOwnerDisplay(r)}</span>
                         <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>Created by: {userEmail(r.created_by_user_id)}</span>
                         <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>Created on: {formatDate(r.created_at)}</span>
-                        <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>Key Exchange: {r.tunnel_key_exchange || '—'}</span>
                       </div>
                       <div style={s.actions}>
                         <button type="button" style={s.iconBtn} onClick={() => navigate('/inventory/tokens', { state: { organizationId: r.id } })} title="Generate Token">

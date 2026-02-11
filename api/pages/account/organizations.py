@@ -161,7 +161,7 @@ def create_organization(request: Request, body: OrganizationCreate):
 @router.put("/organizations/{org_id}")
 def update_organization(org_id: str, body: OrganizationUpdate):
     existing = execute(
-        f"SELECT account_id, group_id, name, group_name, tunnel_key_exchange, is_default, master_owner_user_id, created_by_user_id FROM {CLICKHOUSE_DATABASE}.organizations FINAL WHERE id = %(id)s",
+        f"SELECT account_id, group_id, name, group_name, tunnel_key_exchange, is_default, master_owner_user_id, created_by_user_id FROM {CLICKHOUSE_DATABASE}.organizations FINAL WHERE id = toUUID(%(id)s)",
         {"id": org_id},
     )
     if not existing:
@@ -182,8 +182,12 @@ def update_organization(org_id: str, body: OrganizationUpdate):
 
 @router.delete("/organizations/{org_id}")
 def delete_organization(request: Request, org_id: str):
+    try:
+        org_uuid = UUID(org_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid organization id")
     existing = execute(
-        f"SELECT account_id FROM {CLICKHOUSE_DATABASE}.organizations FINAL WHERE id = %(id)s LIMIT 1",
+        f"SELECT account_id FROM {CLICKHOUSE_DATABASE}.organizations FINAL WHERE id = toUUID(%(id)s) LIMIT 1",
         {"id": org_id},
     )
     if not existing:
@@ -194,5 +198,8 @@ def delete_organization(request: Request, org_id: str):
     if is_owner and req_account_id and str(existing[0][0]) != req_account_id:
         raise HTTPException(status_code=403, detail="You can only delete organizations in your account.")
     client = get_client()
-    client.execute(f"ALTER TABLE {CLICKHOUSE_DATABASE}.organizations DELETE WHERE id = %(id)s", {"id": org_id})
+    client.execute(
+        f"ALTER TABLE {CLICKHOUSE_DATABASE}.organizations DELETE WHERE id = toUUID(%(id)s)",
+        {"id": org_id},
+    )
     return {"deleted": org_id}
