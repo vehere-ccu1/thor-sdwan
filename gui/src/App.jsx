@@ -64,7 +64,6 @@ export default function App() {
           <Route index element={<Home />} />
           <Route path="account/profile" element={<Profile onLogout={handleLogout} />} />
           <Route path="account/organization" element={<Organizations />} />
-          <Route path="account/access-key" element={<PlaceholderPage title="Access Key" />} />
           <Route path="users" element={<Users />} />
           <Route path="inventory/devices" element={<Devices />} />
           <Route path="inventory/device-configuration" element={<DeviceConfigurationHelp />} />

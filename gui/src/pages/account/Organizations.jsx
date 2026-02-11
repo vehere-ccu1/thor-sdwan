@@ -648,9 +648,8 @@ export default function Organizations() {
         </div>
         {activeTab === 'group' ? (
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'flex-end', gap: 12, marginBottom: 0, justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'flex-end', gap: 12, minWidth: 0 }}>
-              <div style={{ ...s.formRow, marginBottom: 0, flex: '1 1 0', minWidth: 0, maxWidth: 220 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+              <div style={{ ...s.formRow, marginBottom: 0, flex: '0 0 auto', minWidth: 0, maxWidth: 220 }}>
                 <input
                   type="text"
                   value={groupForm.name}
@@ -659,7 +658,7 @@ export default function Organizations() {
                   placeholder="Site group"
                 />
               </div>
-              <div style={{ ...s.formRow, marginBottom: 0, flex: '1 1 0', minWidth: 0, maxWidth: 320 }}>
+              <div style={{ ...s.formRow, marginBottom: 0, flex: '0 0 auto', minWidth: 0, maxWidth: 320 }}>
                 <select
                   value={groupForm.parent_group_id}
                   onChange={(e) => setGroupForm((g) => ({ ...g, parent_group_id: e.target.value }))}
@@ -681,21 +680,13 @@ export default function Organizations() {
                   onClick={async () => {
                     const name = groupForm.name.trim();
                     if (!name || !currentAccountId) return;
-                    // Require a parent site-group for all new groups (use the default Master-Organization group if nothing selected).
                     const parentId = groupForm.parent_group_id || defaultGroupId;
                     if (!parentId) return;
-                    if (name.includes('-')) return; // hyphen not allowed in site group name
+                    if (name.includes('-')) return;
                     if (editingGroupId) {
-                      await updateGroup(editingGroupId, {
-                        name,
-                        parent_group_id: parentId,
-                      });
+                      await updateGroup(editingGroupId, { name, parent_group_id: parentId });
                     } else {
-                      await createGroup({
-                        account_id: currentAccountId,
-                        name,
-                        parent_group_id: parentId,
-                      });
+                      await createGroup({ account_id: currentAccountId, name, parent_group_id: parentId });
                     }
                     if (currentAccountId) {
                       const list = await fetchGroups(currentAccountId);
@@ -708,70 +699,42 @@ export default function Organizations() {
                   {editingGroupId ? 'Update' : 'Add'}
                 </button>
                 {editingGroupId ? (
-                  <button
-                    type="button"
-                    style={{ ...s.btn, ...s.btnSecondary }}
-                    onClick={() => {
-                      setGroupForm({ name: '', parent_group_id: defaultGroupId || '' });
-                      setEditingGroupId(null);
-                    }}
-                  >
+                  <button type="button" style={{ ...s.btn, ...s.btnSecondary }} onClick={() => { setGroupForm({ name: '', parent_group_id: defaultGroupId || '' }); setEditingGroupId(null); }}>
                     Cancel
                   </button>
                 ) : null}
               </div>
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="text"
+                    placeholder="Search…"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    style={{ ...s.input, width: 140 }}
+                  />
+                  {searchWord && (
+                    <>
+                      <span style={{ fontSize: t.fontSize.sm, color: t.color.textMuted, whiteSpace: 'nowrap' }}>
+                        {matchCount > 0 ? `${(currentMatchIndex % matchCount) + 1} of ${matchCount}` : '0 matches'}
+                      </span>
+                      <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '4px 10px' }} onClick={() => setCurrentMatchIndex((i) => (i - 1 + matchCount) % matchCount)} disabled={matchCount === 0}>Prev</button>
+                      <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '4px 10px' }} onClick={() => setCurrentMatchIndex((i) => (i + 1) % matchCount)} disabled={matchCount === 0}>Next</button>
+                    </>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 0 }}>
+                  <button type="button" style={{ ...s.iconBtn, ...(viewModeGroup === 'grid' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewModeGroup('grid')} title="Grid view" aria-label="Grid view">
+                    <IconGrid size={16} />
+                  </button>
+                  <button type="button" style={{ ...s.iconBtn, ...(viewModeGroup === 'ticket' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewModeGroup('ticket')} title="Ticket view" aria-label="Ticket view">
+                    <IconTicket size={16} />
+                  </button>
+                  <button type="button" style={{ ...s.iconBtn, ...(viewModeGroup === 'graph' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewModeGroup('graph')} title="Link view (Name vs Parent group)" aria-label="Link view">
+                    <IconLink size={16} />
+                  </button>
+                </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                <input
-                  type="text"
-                  placeholder="Search…"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{ ...s.input, width: 140 }}
-                />
-                {searchWord && (
-                  <>
-                    <span style={{ fontSize: t.fontSize.sm, color: t.color.textMuted, whiteSpace: 'nowrap' }}>
-                      {matchCount > 0 ? `${(currentMatchIndex % matchCount) + 1} of ${matchCount}` : '0 matches'}
-                    </span>
-                    <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '4px 10px' }} onClick={() => setCurrentMatchIndex((i) => (i - 1 + matchCount) % matchCount)} disabled={matchCount === 0}>
-                      Prev
-                    </button>
-                    <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '4px 10px' }} onClick={() => setCurrentMatchIndex((i) => (i + 1) % matchCount)} disabled={matchCount === 0}>
-                      Next
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-            <div style={{ marginTop: 16, marginBottom: 8, display: 'flex', justifyContent: 'flex-end', gap: 0 }}>
-              <button
-                type="button"
-                style={{ ...s.iconBtn, ...(viewModeGroup === 'grid' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }}
-                onClick={() => setViewModeGroup('grid')}
-                title="Grid view"
-                aria-label="Grid view"
-              >
-                <IconGrid size={16} />
-              </button>
-              <button
-                type="button"
-                style={{ ...s.iconBtn, ...(viewModeGroup === 'ticket' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }}
-                onClick={() => setViewModeGroup('ticket')}
-                title="Ticket view"
-                aria-label="Ticket view"
-              >
-                <IconTicket size={16} />
-              </button>
-              <button
-                type="button"
-                style={{ ...s.iconBtn, ...(viewModeGroup === 'graph' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }}
-                onClick={() => setViewModeGroup('graph')}
-                title="Link view (Name vs Parent group)"
-                aria-label="Link view"
-              >
-                <IconLink size={16} />
-              </button>
             </div>
             {/* Site groups: grid, ticket, or graph */}
             <div style={{ marginTop: 0, flex: 1, minHeight: 0, overflow: viewModeGroup === 'graph' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column' }}>
@@ -1036,9 +999,8 @@ const nodeW = 170;
           </div>
         ) : (
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'flex-end', gap: 12, marginBottom: 0, justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'flex-end', gap: 12, minWidth: 0 }}>
-              <div style={{ ...s.formRow, marginBottom: 0, flex: '1 1 0', minWidth: 0, maxWidth: 320 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+              <div style={{ ...s.formRow, marginBottom: 0, flex: '0 0 auto', minWidth: 0, maxWidth: 320 }}>
                 <select
                   value={form.group_id}
                   onChange={(e) => setForm((f) => ({ ...f, group_id: e.target.value }))}
@@ -1053,7 +1015,7 @@ const nodeW = 170;
                   ))}
                 </select>
               </div>
-              <div style={{ ...s.formRow, marginBottom: 0, flex: '1 1 0', minWidth: 0, maxWidth: 200 }}>
+              <div style={{ ...s.formRow, marginBottom: 0, flex: '0 0 auto', minWidth: 0, maxWidth: 200 }}>
                 <input
                   type="text"
                   value={form.name}
@@ -1065,71 +1027,44 @@ const nodeW = 170;
               <div style={{ flexShrink: 0, display: 'flex', gap: 8 }}>
                 {editingId ? (
                   <>
-                    <button type="button" style={{ ...s.btn, ...s.btnPrimary }} onClick={handleUpdate}>
-                      Update
-                    </button>
-                    <button type="button" style={{ ...s.btn, ...s.btnSecondary }} onClick={resetForm}>
-                      Cancel
-                    </button>
+                    <button type="button" style={{ ...s.btn, ...s.btnPrimary }} onClick={handleUpdate}>Update</button>
+                    <button type="button" style={{ ...s.btn, ...s.btnSecondary }} onClick={resetForm}>Cancel</button>
                   </>
                 ) : (
-                  <button type="button" style={{ ...s.btn, ...s.btnPrimary }} onClick={handleAdd}>
-                    Add
+                  <button type="button" style={{ ...s.btn, ...s.btnPrimary }} onClick={handleAdd}>Add</button>
+                )}
+              </div>
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="text"
+                    placeholder="Search…"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    style={{ ...s.input, width: 140 }}
+                  />
+                  {searchWord && (
+                    <>
+                      <span style={{ fontSize: t.fontSize.sm, color: t.color.textMuted, whiteSpace: 'nowrap' }}>
+                        {matchCount > 0 ? `${(currentMatchIndex % matchCount) + 1} of ${matchCount}` : '0 matches'}
+                      </span>
+                      <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '4px 10px' }} onClick={() => setCurrentMatchIndex((i) => (i - 1 + matchCount) % matchCount)} disabled={matchCount === 0}>Prev</button>
+                      <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '4px 10px' }} onClick={() => setCurrentMatchIndex((i) => (i + 1) % matchCount)} disabled={matchCount === 0}>Next</button>
+                    </>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 0 }}>
+                  <button type="button" style={{ ...s.iconBtn, ...(viewMode === 'grid' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewMode('grid')} title="Grid view" aria-label="Grid view">
+                    <IconGrid size={16} />
                   </button>
-                )}
+                  <button type="button" style={{ ...s.iconBtn, ...(viewMode === 'ticket' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewMode('ticket')} title="Ticket view" aria-label="Ticket view">
+                    <IconTicket size={16} />
+                  </button>
+                  <button type="button" style={{ ...s.iconBtn, ...(viewMode === 'graph' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewMode('graph')} title="Link view (Site Name vs Site Group)" aria-label="Link view">
+                    <IconLink size={16} />
+                  </button>
+                </div>
               </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                <input
-                  type="text"
-                  placeholder="Search…"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{ ...s.input, width: 140 }}
-                />
-                {searchWord && (
-                  <>
-                    <span style={{ fontSize: t.fontSize.sm, color: t.color.textMuted, whiteSpace: 'nowrap' }}>
-                      {matchCount > 0 ? `${(currentMatchIndex % matchCount) + 1} of ${matchCount}` : '0 matches'}
-                    </span>
-                    <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '4px 10px' }} onClick={() => setCurrentMatchIndex((i) => (i - 1 + matchCount) % matchCount)} disabled={matchCount === 0}>
-                      Prev
-                    </button>
-                    <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '4px 10px' }} onClick={() => setCurrentMatchIndex((i) => (i + 1) % matchCount)} disabled={matchCount === 0}>
-                      Next
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-            <div style={{ marginTop: 16, marginBottom: 8, display: 'flex', justifyContent: 'flex-end', gap: 0 }}>
-              <button
-                type="button"
-                style={s.iconBtn}
-                onClick={() => setViewMode('grid')}
-                title="Grid view"
-                aria-label="Grid view"
-              >
-                <IconGrid size={16} />
-              </button>
-              <button
-                type="button"
-                style={s.iconBtn}
-                onClick={() => setViewMode('ticket')}
-                title="Ticket view"
-                aria-label="Ticket view"
-              >
-                <IconTicket size={16} />
-              </button>
-              <button
-                type="button"
-                style={{ ...s.iconBtn, ...(viewMode === 'graph' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }}
-                onClick={() => setViewMode('graph')}
-                title="Link view (Site Name vs Site Group)"
-                aria-label="Link view"
-              >
-                <IconLink size={16} />
-              </button>
             </div>
             {/* Sites: grid, ticket, or graph */}
             <div style={{ marginTop: 0, flex: 1, minHeight: 0, overflow: viewMode === 'graph' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column' }}>
