@@ -13,8 +13,9 @@ from config import CLICKHOUSE_DATABASE, CLICKHOUSE_HOST, CLICKHOUSE_PASSWORD, CL
 
 # Keep ClickHouse waits bounded so API doesn't hang when DB is down.
 _CONNECT_TIMEOUT_SEC = 5
-_SEND_RECEIVE_TIMEOUT_SEC = 10
-_SYNC_REQUEST_TIMEOUT_SEC = 5
+# Seed/schema operations can take longer on ClickHouse 18.x; keep bounded but less aggressive than 10s.
+_SEND_RECEIVE_TIMEOUT_SEC = 30
+_SYNC_REQUEST_TIMEOUT_SEC = 30
 
 # One Client per thread; clickhouse-driver Client must not be shared across threads.
 _local = threading.local()

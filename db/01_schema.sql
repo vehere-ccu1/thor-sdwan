@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS sdwan_cms.users
 ) ENGINE = ReplacingMergeTree(updated_at)
   ORDER BY (email, id);
 
--- View: users with role name (latest row per user by updated_at)
+-- View: users with role name (latest row per user by updated_at).
+-- Note: job_title and account columns are in the view defined in 02_schema_accounts.sql (after schema_sync adds missing columns).
 CREATE VIEW IF NOT EXISTS sdwan_cms.users_with_roles AS
 SELECT
     u.id,
@@ -45,7 +46,6 @@ SELECT
     u.enabled,
     u.created_at,
     u.updated_at,
-    u.job_title,
     r.name AS role_name,
     r.permissions
 FROM (SELECT * FROM sdwan_cms.users FINAL) u

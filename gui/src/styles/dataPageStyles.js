@@ -4,7 +4,13 @@
  */
 export function getDataPageStyles(t) {
   return {
-    page: { fontFamily: t.fontFamily.sans },
+    page: {
+      fontFamily: t.fontFamily.sans,
+      display: 'flex',
+      flexDirection: 'column',
+      flex: 1,
+      minHeight: 0,
+    },
     header: {
       display: 'flex',
       alignItems: 'center',
@@ -111,7 +117,7 @@ export function getDataPageStyles(t) {
     },
     ticketMain: { display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
     empty: { color: t.color.textMuted, padding: 24, textAlign: 'center' },
-    actions: { display: 'flex', gap: 6 },
+    actions: { display: 'flex', gap: 0 },
     iconBtn: {
       width: 28,
       height: 28,

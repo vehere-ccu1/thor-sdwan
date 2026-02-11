@@ -104,6 +104,7 @@ export default function CreateAccount({ onLogin }) {
     else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(businessEmail.trim())) nextFieldErrors.businessEmail = 'Enter a valid email address.';
     if (!name.trim()) nextFieldErrors.name = 'Name is required.';
     if (!country.trim()) nextFieldErrors.country = 'Country is required.';
+    if (!(jobTitle || '').trim()) nextFieldErrors.jobTitle = 'Job title is required.';
     if (!password) nextFieldErrors.password = 'Password is required.';
     else if (password.length < 8) nextFieldErrors.password = 'Password should be at least 8 characters.';
     if (Object.keys(nextFieldErrors).length) {
@@ -130,17 +131,21 @@ export default function CreateAccount({ onLogin }) {
     setSuccess(true);
     setTimeout(() => {
       onLogin?.();
-      navigate('/', { replace: true });
-    }, 2000);
+      navigate('/login', { replace: true });
+    }, 2500);
   };
 
   if (success) {
     return (
       <div style={styles.page}>
         <div style={styles.card}>
-          <h1 style={styles.title}>Account created</h1>
-          <p style={styles.success}>Your owner account has been created. Redirecting to sign in...</p>
-          <Link to="/login" style={styles.link}>Go to sign in</Link>
+          <div style={styles.header}>
+            <h1 style={styles.title}>Account created</h1>
+          </div>
+          <div style={styles.formContainer}>
+            <p style={styles.success}>Your owner account has been created. Redirecting to sign in...</p>
+            <Link to="/login" style={styles.link}>Go to sign in</Link>
+          </div>
         </div>
       </div>
     );
@@ -206,8 +211,8 @@ export default function CreateAccount({ onLogin }) {
               type="text"
               value={form.jobTitle}
               onChange={handleChange('jobTitle')}
-              style={styles.input}
-              placeholder="Job Title"
+              style={{ ...styles.input, ...(fieldErrors.jobTitle ? styles.inputError : {}) }}
+              placeholder="Job Title *"
               autoComplete="organization-title"
             />
           </div>

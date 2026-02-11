@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
+import { requestForgotPasswordOtp, resetForgotPassword } from '../api/client';
 
 export default function ForgotPassword() {
   const { theme: t } = useTheme();
@@ -9,6 +10,7 @@ export default function ForgotPassword() {
   const [newPassword, setNewPassword] = useState('');
   const [step, setStep] = useState(1);
   const [message, setMessage] = useState('');
+  const [otpHint, setOtpHint] = useState('');
   const [busy, setBusy] = useState(false);
 
   const styles = {
@@ -76,10 +78,18 @@ export default function ForgotPassword() {
   const handleSendOtp = async (e) => {
     e.preventDefault();
     if (!email.trim()) return;
+    setMessage('');
+    setOtpHint('');
     setBusy(true);
-    // Placeholder: OTP would be sent by backend to registered email
-    await new Promise((r) => setTimeout(r, 800));
+    const res = await requestForgotPasswordOtp(email.trim());
     setBusy(false);
+    if (!res) {
+      setMessage('Failed to request OTP. Please try again.');
+      return;
+    }
+    // For testing, backend returns OTP in response. In production, this should not be displayed.
+    if (res.otp) setOtpHint(String(res.otp));
+    setMessage(res.message || 'If this email is registered, an OTP has been sent.');
     setStep(2);
   };
 
@@ -91,10 +101,13 @@ export default function ForgotPassword() {
     }
     setBusy(true);
     setMessage('');
-    // Placeholder: verify OTP and update password via API
-    await new Promise((r) => setTimeout(r, 800));
+    const res = await resetForgotPassword(email.trim(), otp.trim(), newPassword);
     setBusy(false);
-    setMessage('Password reset is not yet connected to the backend. Configure OTP and reset API to enable.');
+    if (!res) {
+      setMessage('Failed to reset password. Please check OTP and try again.');
+      return;
+    }
+    setMessage(res.message || 'Password has been reset.');
   };
 
   return (
@@ -121,6 +134,11 @@ export default function ForgotPassword() {
           </form>
         ) : (
           <form style={styles.form} onSubmit={handleResetPassword}>
+            {otpHint && (
+              <div style={{ ...styles.message, color: t.color.success }}>
+                OTP (testing): <strong>{otpHint}</strong>
+              </div>
+            )}
             <input
               type="text"
               value={otp}

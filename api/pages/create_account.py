@@ -63,6 +63,8 @@ def create_owner_account(body: CreateOwnerAccountRequest):
             raise HTTPException(status_code=400, detail="Name is required.")
         if not master_org_name:
             raise HTTPException(status_code=400, detail="Master-Organization name is required.")
+        if not job_title:
+            raise HTTPException(status_code=400, detail="Job title is required.")
         if len(password) < 6:
             raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
 
@@ -101,7 +103,7 @@ def create_owner_account(body: CreateOwnerAccountRequest):
         )
 
         # 3. Create owner user (master owner: first sign-up from Create Account page)
-        q_user = f"""INSERT INTO {CLICKHOUSE_DATABASE}.users (id, account_id, email, name, password_hash, role_id, is_owner, enabled, master_owner_user_id, created_by_user_id, organizations, job_title) VALUES"""
+        q_user = f"""INSERT INTO {CLICKHOUSE_DATABASE}.users (id, account_id, email, name, password_hash, role_id, is_owner, enabled, master_owner_user_id, created_by_user_id, organizations, organization_group_ids, job_title) VALUES"""
         execute_many(
             q_user,
             [
@@ -116,6 +118,7 @@ def create_owner_account(body: CreateOwnerAccountRequest):
                     1,
                     str(user_id),
                     str(user_id),
+                    [],
                     [],
                     job_title,
                 )
@@ -139,9 +142,8 @@ def create_owner_account(body: CreateOwnerAccountRequest):
             ],
         )
 
-        # 5. Create master organization (site where SD-WAN agents will attach)
-        # organizations table columns: id, name, group_name, tunnel_key_exchange, is_default, created_at, updated_at
-        # plus account_id, group_id, master_owner_user_id, created_by_user_id added by schema_sync.
+        # 5. Create master organization (site where SD-WAN agents will attach).
+        # Master-Organization has no parent group: group_id = nil.
         q_org = f"""INSERT INTO {CLICKHOUSE_DATABASE}.organizations (id, account_id, group_id, name, group_name, tunnel_key_exchange, is_default, master_owner_user_id, created_by_user_id) VALUES"""
         execute_many(
             q_org,
@@ -149,7 +151,7 @@ def create_owner_account(body: CreateOwnerAccountRequest):
                 (
                     str(org_id),
                     str(account_id),
-                    str(group_id),
+                    "00000000-0000-0000-0000-000000000000",
                     master_org_name,
                     "",
                     "ikev2",

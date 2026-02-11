@@ -65,6 +65,7 @@ class UserCreate(BaseModel):
     job_title: str = ""
     password_hash: str = ""
     role_id: str | None = None
+    role: str | None = None  # role name: 'owner' | 'manager' | 'viewer'; resolved to role_id if role_id not set
     is_owner: bool = False
     enabled: bool = True
     organizations: list[str] = []  # organization IDs the user can access

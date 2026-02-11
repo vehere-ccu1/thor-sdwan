@@ -6,12 +6,15 @@
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS sdwan_cms.accounts
 (
-    id                   UUID DEFAULT generateUUIDv4(),
-    name                 String DEFAULT '',
-    billing_email        String,
-    master_owner_user_id UUID DEFAULT toUUID('00000000-0000-0000-0000-000000000000'),
-    created_at           DateTime DEFAULT now(),
-    updated_at           DateTime DEFAULT now()
+    id                        UUID DEFAULT generateUUIDv4(),
+    name                      String DEFAULT '',
+    billing_email             String,
+    master_owner_user_id      UUID DEFAULT toUUID('00000000-0000-0000-0000-000000000000'),
+    master_organization_name  String DEFAULT '',
+    country                   String DEFAULT '',
+    notifications             UInt8 DEFAULT 0,
+    created_at                DateTime DEFAULT now(),
+    updated_at                DateTime DEFAULT now()
 ) ENGINE = ReplacingMergeTree(updated_at)
   ORDER BY id;
 
@@ -20,11 +23,14 @@ CREATE TABLE IF NOT EXISTS sdwan_cms.accounts
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS sdwan_cms.groups
 (
-    id          UUID DEFAULT generateUUIDv4(),
-    account_id  UUID,
-    name        String,
-    created_at  DateTime DEFAULT now(),
-    updated_at  DateTime DEFAULT now()
+    id                UUID DEFAULT generateUUIDv4(),
+    account_id         UUID,
+    name              String,
+    master_owner_user_id UUID DEFAULT toUUID('00000000-0000-0000-0000-000000000000'),
+    created_by_user_id   UUID DEFAULT toUUID('00000000-0000-0000-0000-000000000000'),
+    parent_group_id      UUID DEFAULT toUUID('00000000-0000-0000-0000-000000000000'),
+    created_at         DateTime DEFAULT now(),
+    updated_at         DateTime DEFAULT now()
 ) ENGINE = ReplacingMergeTree(updated_at)
   ORDER BY (account_id, id);
 

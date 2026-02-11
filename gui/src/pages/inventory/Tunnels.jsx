@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 import { getDataPageStyles } from '../../styles/dataPageStyles';
-import { IconKey, IconTrash } from '../../components/Icons';
+import { IconKey, IconTrash, IconGrid, IconTicket } from '../../components/Icons';
 
 const COLUMNS = [
   { key: 'id', label: 'ID' },
@@ -97,13 +97,15 @@ export default function Tunnels() {
     <div style={s.page}>
       <div style={s.header}>
         <h1 style={s.title}>Inventory – Tunnels</h1>
-        <div style={s.toolbar}>
+        <div style={{ ...s.toolbar, marginLeft: 'auto' }}>
           <button
             type="button"
-            style={{ ...s.btn, ...s.btnSecondary }}
+            style={s.iconBtn}
             onClick={() => setViewMode(viewMode === 'grid' ? 'ticket' : 'grid')}
+            title={viewMode === 'grid' ? 'Ticket view' : 'Grid view'}
+            aria-label={viewMode === 'grid' ? 'Ticket view' : 'Grid view'}
           >
-            {viewMode === 'grid' ? 'Ticket view' : 'Grid view'}
+            {viewMode === 'grid' ? <IconTicket size={16} /> : <IconGrid size={16} />}
           </button>
         </div>
       </div>

@@ -6,6 +6,8 @@ import {
   IconEdit,
   IconTrash,
   IconKey,
+  IconGrid,
+  IconTicket,
   IconArrowUp,
   IconArrowDown,
   IconBlocked,
@@ -418,10 +420,12 @@ export default function OrganizationFirewallPolicies() {
         <div style={s.toolbar}>
           <button
             type="button"
-            style={{ ...s.btn, ...s.btnSecondary }}
+            style={s.iconBtn}
             onClick={() => setViewMode(viewMode === 'grid' ? 'ticket' : 'grid')}
+            title={viewMode === 'grid' ? 'Ticket view' : 'Grid view'}
+            aria-label={viewMode === 'grid' ? 'Ticket view' : 'Grid view'}
           >
-            {viewMode === 'grid' ? 'Ticket view' : 'Grid view'}
+            {viewMode === 'grid' ? <IconTicket size={16} /> : <IconGrid size={16} />}
           </button>
           <button type="button" style={{ ...s.btn, ...s.btnPrimary }} onClick={handleSave}>
             Save & Update Devices

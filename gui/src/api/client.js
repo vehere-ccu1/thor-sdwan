@@ -167,3 +167,12 @@ export async function createToken(body) {
 export async function revokeToken(tokenId) {
   return request(`/tokens/${tokenId}`, { method: 'DELETE' });
 }
+
+// ----- Forgot password / reset password -----
+export async function requestForgotPasswordOtp(email) {
+  return request('/forgot-password/request-otp', { method: 'POST', body: JSON.stringify({ email }) });
+}
+
+export async function resetForgotPassword(email, otp, newPassword) {
+  return request('/forgot-password/reset', { method: 'POST', body: JSON.stringify({ email, otp, new_password: newPassword }) });
+}

@@ -73,12 +73,47 @@ def reset_password(body: ResetPasswordRequest):
     if stored_otp != otp:
         raise HTTPException(status_code=400, detail="Invalid OTP.")
     del _otp_store[email]
-    q = f"""SELECT id, account_id, email, name, role_id, is_owner, enabled FROM {CLICKHOUSE_DATABASE}.users FINAL WHERE email = %(email)s LIMIT 1"""
+    # Preserve existing user fields; only change password_hash.
+    # If we insert only a subset of columns into ReplacingMergeTree, missing columns may be replaced with defaults.
+    q = f"""SELECT id,
+                   account_id,
+                   email,
+                   name,
+                   job_title,
+                   role_id,
+                   is_owner,
+                   enabled,
+                   created_by_user_id,
+                   master_owner_user_id,
+                   organizations,
+                   organization_group_ids
+            FROM {CLICKHOUSE_DATABASE}.users FINAL
+            WHERE email = %(email)s
+            LIMIT 1"""
     rows = execute(q, {"email": email})
     if not rows:
         raise HTTPException(status_code=404, detail="User not found.")
     r = rows[0]
     password_hash = _password_sha256_hex(new_password)
-    ins = f"""INSERT INTO {CLICKHOUSE_DATABASE}.users (id, account_id, email, name, password_hash, role_id, is_owner, enabled) VALUES"""
-    execute_many(ins, [(r[0], r[1], r[2], r[3] or "", password_hash, r[4], r[5], r[6])])
+    ins = f"""INSERT INTO {CLICKHOUSE_DATABASE}.users (id, account_id, email, name, password_hash, role_id, is_owner, enabled, created_by_user_id, master_owner_user_id, organizations, organization_group_ids, job_title) VALUES"""
+    execute_many(
+        ins,
+        [
+            (
+                r[0],
+                r[1],
+                r[2],
+                r[3] or "",
+                password_hash,
+                r[5],
+                r[6],
+                r[7],
+                r[8],
+                r[9],
+                list(r[10]) if r[10] is not None else [],
+                list(r[11]) if r[11] is not None else [],
+                r[4] or "",
+            )
+        ],
+    )
     return {"message": "Password has been reset."}

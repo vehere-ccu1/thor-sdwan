@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 import { getDataPageStyles } from '../../styles/dataPageStyles';
 import CollapsibleAddPanel from '../../components/CollapsibleAddPanel';
-import { IconEdit, IconTrash, IconKey } from '../../components/Icons';
+import { IconEdit, IconTrash, IconKey, IconGrid, IconTicket } from '../../components/Icons';
 
 const CATEGORIES = ['Browser', 'Streaming', 'VoIP', 'Gaming', 'Business', 'Other'];
 const SERVICE_CLASSES = ['Real-time', 'Interactive', 'Bulk', 'Best-effort'];
@@ -230,10 +230,12 @@ export default function TrafficAppIdentification() {
             </button>
             <button
               type="button"
-              style={{ ...s.btn, ...s.btnSecondary }}
+              style={s.iconBtn}
               onClick={() => setViewModeManual(viewModeManual === 'grid' ? 'ticket' : 'grid')}
+              title={viewModeManual === 'grid' ? 'Ticket view' : 'Grid view'}
+              aria-label={viewModeManual === 'grid' ? 'Ticket view' : 'Grid view'}
             >
-              {viewModeManual === 'grid' ? 'Ticket view' : 'Grid view'}
+              {viewModeManual === 'grid' ? <IconTicket size={16} /> : <IconGrid size={16} />}
             </button>
           </div>
         </div>
@@ -329,10 +331,12 @@ export default function TrafficAppIdentification() {
           <div style={s.toolbar}>
             <button
               type="button"
-              style={{ ...s.btn, ...s.btnSecondary }}
+              style={s.iconBtn}
               onClick={() => setViewModePredefine(viewModePredefine === 'grid' ? 'ticket' : 'grid')}
+              title={viewModePredefine === 'grid' ? 'Ticket view' : 'Grid view'}
+              aria-label={viewModePredefine === 'grid' ? 'Ticket view' : 'Grid view'}
             >
-              {viewModePredefine === 'grid' ? 'Ticket view' : 'Grid view'}
+              {viewModePredefine === 'grid' ? <IconTicket size={16} /> : <IconGrid size={16} />}
             </button>
           </div>
         </div>

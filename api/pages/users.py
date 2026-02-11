@@ -3,6 +3,7 @@ API module corresponding to gui/src/pages/Users.jsx.
 Business logic: users and user permissions CRUD.
 Role-based visibility: owner sees all users in account; non-owner sees only users they created.
 """
+from datetime import datetime, timezone, timedelta
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Request
@@ -12,6 +13,13 @@ from db import execute, execute_many, get_client
 from models import PermissionCreate, PermissionUpdate, UserCreate, UserUpdate, row_to_dict
 
 router = APIRouter()
+
+# Fallback role UUIDs (match db/05_seed_admin.sql) when lookup by name returns nothing
+ROLE_IDS_BY_NAME = {
+    "owner": UUID("22222222-2222-2222-2222-222222222222"),
+    "manager": UUID("44444444-4444-4444-4444-444444444444"),
+    "viewer": UUID("55555555-5555-5555-5555-555555555555"),
+}
 
 USER_COLS = [
     "id",
@@ -108,6 +116,9 @@ def create_user(request: Request, body: UserCreate):
     email = (body.email or "").strip().lower()
     if not email:
         raise HTTPException(status_code=400, detail="Email is required")
+    job_title = (body.job_title or "").strip()
+    if not job_title:
+        raise HTTPException(status_code=400, detail="Job title is required")
     exists = execute(
         f"SELECT 1 FROM {CLICKHOUSE_DATABASE}.users FINAL WHERE email = %(email)s LIMIT 1",
         {"email": email},
@@ -115,7 +126,18 @@ def create_user(request: Request, body: UserCreate):
     if exists:
         raise HTTPException(status_code=409, detail="A user with this email already exists.")
     uid = uuid4()
-    role_id = UUID(body.role_id) if body.role_id else UUID("00000000-0000-0000-0000-000000000000")
+    _nil_uuid = UUID("00000000-0000-0000-0000-000000000000")
+    if body.role_id:
+        role_id = UUID(body.role_id)
+    elif body.role and (body.role or "").strip():
+        role_name = (body.role or "").strip().lower()
+        role_row = execute(
+            f"SELECT id FROM {CLICKHOUSE_DATABASE}.roles FINAL WHERE lower(name) = lower(%(name)s) LIMIT 1",
+            {"name": role_name},
+        )
+        role_id = UUID(role_row[0][0]) if role_row else ROLE_IDS_BY_NAME.get(role_name, _nil_uuid)
+    else:
+        role_id = _nil_uuid
     created_by = (request.headers.get("X-User-Id") or "").strip() or None
     created_by_uuid = UUID(created_by) if created_by else UUID("00000000-0000-0000-0000-000000000000")
     # Master owner: from account (first owner who signed up); fallback to created_by or zero
@@ -145,7 +167,7 @@ def create_user(request: Request, body: UserCreate):
                 master_owner_uuid,
                 org_list,
                 group_list,
-                (body.job_title or ""),
+                job_title,
             )
         ],
     )
@@ -209,15 +231,18 @@ def update_user(request: Request, user_id: str, body: UserUpdate):
     if body.role_id is not None:
         role_id = UUID(body.role_id)
     elif body.role is not None:
-        role_name = (body.role or "").strip()
+        role_name = (body.role or "").strip().lower()
         if role_name:
             role_row = execute(
                 f"SELECT id FROM {CLICKHOUSE_DATABASE}.roles FINAL WHERE lower(name) = lower(%(name)s) LIMIT 1",
                 {"name": role_name},
             )
-            role_id = UUID(role_row[0][0]) if role_row else (r[3] if r[3] is not None else _nil_uuid)
+            if role_row:
+                role_id = UUID(role_row[0][0])
+            else:
+                role_id = ROLE_IDS_BY_NAME.get(role_name, r[4] if r[4] is not None else _nil_uuid)
         else:
-        role_id = r[4] if r[4] is not None else _nil_uuid
+            role_id = r[4] if r[4] is not None else _nil_uuid
     else:
         role_id = r[4] if r[4] is not None else _nil_uuid
     is_owner = (1 if body.is_owner else 0) if body.is_owner is not None else (r[5] or 0)
@@ -226,8 +251,10 @@ def update_user(request: Request, user_id: str, body: UserUpdate):
     master_owner = r[8] if len(r) > 8 and r[8] else _nil_uuid
     organizations = list(body.organizations) if body.organizations is not None else (list(r[9]) if len(r) > 9 and r[9] is not None else [])
     org_groups = list(body.organization_group_ids) if body.organization_group_ids is not None else (list(r[10]) if len(r) > 10 and r[10] is not None else [])
-    q = f"""INSERT INTO {CLICKHOUSE_DATABASE}.users (id, account_id, email, name, password_hash, role_id, is_owner, enabled, created_by_user_id, master_owner_user_id, organizations, organization_group_ids, job_title) VALUES"""
-    execute_many(q, [(UUID(user_id), r[0], r[1], name, "", role_id, is_owner, enabled, created_by, master_owner, organizations, org_groups, job_title)])
+    # INSERT new version; set updated_at explicitly so this row wins when ReplacingMergeTree(updated_at) merges.
+    updated_at = datetime.now(timezone.utc) + timedelta(seconds=1)
+    q = f"""INSERT INTO {CLICKHOUSE_DATABASE}.users (id, account_id, email, name, password_hash, role_id, is_owner, enabled, created_by_user_id, master_owner_user_id, organizations, organization_group_ids, job_title, updated_at) VALUES"""
+    execute_many(q, [(UUID(user_id), r[0], r[1], name, "", role_id, is_owner, enabled, created_by, master_owner, organizations, org_groups, job_title, updated_at)])
     return {
         "id": user_id,
         "email": r[1],
@@ -235,6 +262,58 @@ def update_user(request: Request, user_id: str, body: UserUpdate):
         "job_title": job_title,
         "is_owner": bool(is_owner),
         "enabled": bool(enabled),
+    }
+
+
+@router.get("/users/{user_id}/debug")
+def debug_user_rows(user_id: str):
+    """
+    Inspect raw table data for a user (to debug role/updated_at).
+    Returns: all rows without FINAL (duplicates), one row with FINAL, and role names.
+    """
+    # All rows for this id (no FINAL) – see duplicates and each row's role_id, updated_at
+    raw_rows = execute(
+        f"SELECT id, email, name, role_id, is_owner, enabled, created_at, updated_at, job_title "
+        f"FROM {CLICKHOUSE_DATABASE}.users WHERE id = %(id)s ORDER BY updated_at DESC",
+        {"id": user_id},
+    )
+    # Single row as the app sees it (FINAL)
+    final_row = execute(
+        f"SELECT id, email, name, role_id, is_owner, enabled, created_at, updated_at, job_title "
+        f"FROM {CLICKHOUSE_DATABASE}.users FINAL WHERE id = %(id)s LIMIT 1",
+        {"id": user_id},
+    )
+    # Role names for reference
+    roles = execute(
+        f"SELECT id, name FROM {CLICKHOUSE_DATABASE}.roles FINAL ORDER BY name",
+    )
+    return {
+        "user_id": user_id,
+        "raw_rows_count": len(raw_rows),
+        "raw_rows": [
+            {
+                "email": r[1],
+                "name": r[2],
+                "role_id": str(r[3]) if r[3] else None,
+                "is_owner": bool(r[4]) if r[4] is not None else False,
+                "enabled": bool(r[5]) if r[5] is not None else False,
+                "created_at": str(r[6]) if r[6] else None,
+                "updated_at": str(r[7]) if r[7] else None,
+                "job_title": r[8] or "",
+            }
+            for r in raw_rows
+        ],
+        "final_row": (
+            {
+                "email": final_row[0][1],
+                "name": final_row[0][2],
+                "role_id": str(final_row[0][3]) if final_row[0][3] else None,
+                "updated_at": str(final_row[0][7]) if final_row[0][7] else None,
+            }
+            if final_row
+            else None
+        ),
+        "roles": [{"id": str(r[0]), "name": r[1]} for r in roles] if roles else [],
     }
 
 

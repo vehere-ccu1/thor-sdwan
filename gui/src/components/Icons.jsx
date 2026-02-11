@@ -158,3 +158,39 @@ export function IconKey({ size = 20, ...props }) {
     </svg>
   );
 }
+
+/** Toggle icon: grid/table view */
+export function IconGrid({ size = 20, ...props }) {
+  const iconStyle = useIconStyle();
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...props} style={iconStyle}>
+      <path
+        fill="currentColor"
+        d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z"
+      />
+    </svg>
+  );
+}
+
+/** Toggle icon: ticket/list view */
+export function IconTicket({ size = 20, ...props }) {
+  const iconStyle = useIconStyle();
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...props} style={iconStyle}>
+      <path fill="currentColor" d="M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h16v2H4v-2z" />
+    </svg>
+  );
+}
+
+/** Toggle icon: link / graph / tree view (nodes and edges) */
+export function IconLink({ size = 20, ...props }) {
+  const iconStyle = useIconStyle();
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...props} style={iconStyle}>
+      <circle cx="6" cy="6" r="2.5" fill="currentColor" />
+      <circle cx="18" cy="6" r="2.5" fill="currentColor" />
+      <circle cx="12" cy="18" r="2.5" fill="currentColor" />
+      <path stroke="currentColor" strokeWidth="1.5" fill="none" d="M6 6 L12 18 M18 6 L12 18" />
+    </svg>
+  );
+}

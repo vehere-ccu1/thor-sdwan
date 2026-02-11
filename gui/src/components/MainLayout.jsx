@@ -65,8 +65,20 @@ export default function MainLayout({ onLogout }) {
     paddingLeft: theme.sideMenu.width,
     minHeight: '100vh',
     background: theme.color.background,
+    display: 'flex',
+    flexDirection: 'column',
+    flex: 1,
   };
-  const mainContentStyle = { padding: 24, width: '100%', maxWidth: '100%', boxSizing: 'border-box' };
+  const mainContentStyle = {
+    padding: 24,
+    width: '100%',
+    maxWidth: '100%',
+    boxSizing: 'border-box',
+    flex: 1,
+    minHeight: 0,
+    display: 'flex',
+    flexDirection: 'column',
+  };
 
   return (
     <div style={layoutStyle}>

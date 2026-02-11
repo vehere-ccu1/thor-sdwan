@@ -37,13 +37,25 @@ def list_accounts(request: Request):
                a.updated_at,
                u.name AS owner_name,
                u.job_title AS owner_job_title
-        FROM {CLICKHOUSE_DATABASE}.accounts FINAL a
-        LEFT JOIN {CLICKHOUSE_DATABASE}.users FINAL u
+        FROM (SELECT * FROM {CLICKHOUSE_DATABASE}.accounts FINAL) a
+        LEFT JOIN (SELECT * FROM {CLICKHOUSE_DATABASE}.users FINAL) u
                ON a.master_owner_user_id = u.id
     """
     if not x_user_id:
         rows = execute(base_select + " ORDER BY a.created_at DESC")
-        return [row_to_dict(cols, r) for r in rows]
+        result = [row_to_dict(cols, r) for r in rows]
+        for rec in result:
+            if rec.get("billing_email") and (not rec.get("owner_name") or not rec.get("owner_job_title")):
+                user_row = execute(
+                    f"SELECT name, job_title FROM (SELECT * FROM {CLICKHOUSE_DATABASE}.users FINAL) u WHERE u.email = %(email)s LIMIT 1",
+                    {"email": (rec.get("billing_email") or "").strip().lower()},
+                )
+                if user_row:
+                    if not rec.get("owner_name"):
+                        rec["owner_name"] = user_row[0][0] or ""
+                    if not rec.get("owner_job_title"):
+                        rec["owner_job_title"] = user_row[0][1] or ""
+        return result
     requester = execute(
         f"SELECT account_id FROM {CLICKHOUSE_DATABASE}.users FINAL WHERE id = %(id)s LIMIT 1",
         {"id": x_user_id},
@@ -55,7 +67,20 @@ def list_accounts(request: Request):
         return []
     q = base_select + " WHERE a.id = %(account_id)s ORDER BY a.created_at DESC"
     rows = execute(q, {"account_id": account_id})
-    return [row_to_dict(cols, r) for r in rows]
+    result = [row_to_dict(cols, r) for r in rows]
+    # Fallback: if JOIN left owner_name/owner_job_title empty (e.g. nil master_owner_user_id), resolve by billing_email
+    for rec in result:
+        if rec.get("billing_email") and (not rec.get("owner_name") or not rec.get("owner_job_title")):
+            user_row = execute(
+                f"SELECT name, job_title FROM (SELECT * FROM {CLICKHOUSE_DATABASE}.users FINAL) u WHERE u.email = %(email)s LIMIT 1",
+                {"email": (rec.get("billing_email") or "").strip().lower()},
+            )
+            if user_row:
+                if not rec.get("owner_name"):
+                    rec["owner_name"] = user_row[0][0] or ""
+                if not rec.get("owner_job_title"):
+                    rec["owner_job_title"] = user_row[0][1] or ""
+    return result
 
 
 @router.post("/accounts")
