@@ -876,101 +876,143 @@ export default function SiteManagement() {
 
   return (
     <div style={s.page}>
-      {/* Link-style switcher: Site Group | Site */}
+      {/* Tabs and toolbar in one row: Site Group | Site on the left, search + icons on the right */}
       <div style={{ ...s.formCard, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', marginBottom: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
-          <button
-            type="button"
-            onClick={() => setActiveTab('group')}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              fontFamily: t.fontFamily.sans,
-              fontSize: t.fontSize.base,
-              color: '#2563eb',
-              textDecoration: activeTab === 'group' ? 'underline' : 'none',
-              cursor: 'pointer',
-              fontWeight: activeTab === 'group' ? 700 : 400,
-            }}
-          >
-            Site Group
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('site')}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              fontFamily: t.fontFamily.sans,
-              fontSize: t.fontSize.base,
-              color: '#2563eb',
-              textDecoration: activeTab === 'site' ? 'underline' : 'none',
-              cursor: 'pointer',
-              fontWeight: activeTab === 'site' ? 700 : 400,
-            }}
-          >
-            Site
-          </button>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <button
+              type="button"
+              onClick={() => setActiveTab('group')}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                fontFamily: t.fontFamily.sans,
+                fontSize: t.fontSize.base,
+                color: '#2563eb',
+                textDecoration: activeTab === 'group' ? 'underline' : 'none',
+                cursor: 'pointer',
+                fontWeight: activeTab === 'group' ? 700 : 400,
+              }}
+            >
+              Site Group
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('site')}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                fontFamily: t.fontFamily.sans,
+                fontSize: t.fontSize.base,
+                color: '#2563eb',
+                textDecoration: activeTab === 'site' ? 'underline' : 'none',
+                cursor: 'pointer',
+                fontWeight: activeTab === 'site' ? 700 : 400,
+              }}
+            >
+              Site
+            </button>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="text"
+                placeholder="Search…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ ...s.input, width: 140 }}
+              />
+              {searchWord && (
+                <>
+                  <span style={{ fontSize: t.fontSize.sm, color: t.color.textMuted, whiteSpace: 'nowrap' }}>
+                    {matchCount > 0 ? `${(currentMatchIndex % matchCount) + 1} of ${matchCount}` : '0 matches'}
+                  </span>
+                  <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '4px 10px' }} onClick={() => setCurrentMatchIndex((i) => (i - 1 + matchCount) % matchCount)} disabled={matchCount === 0}>Prev</button>
+                  <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '4px 10px' }} onClick={() => setCurrentMatchIndex((i) => (i + 1) % matchCount)} disabled={matchCount === 0}>Next</button>
+                </>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 0 }}>
+              {activeTab === 'group' ? (
+                <>
+                  <button type="button" style={{ ...s.iconBtn, ...(viewModeGroup === 'grid' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewModeGroup('grid')} title="Grid view" aria-label="Grid view">
+                    <IconGrid size={16} />
+                  </button>
+                  <button type="button" style={{ ...s.iconBtn, ...(viewModeGroup === 'ticket' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewModeGroup('ticket')} title="Ticket view" aria-label="Ticket view">
+                    <IconTicket size={16} />
+                  </button>
+                  <button type="button" style={{ ...s.iconBtn, ...(viewModeGroup === 'graph' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewModeGroup('graph')} title="Link view (Name vs Parent group)" aria-label="Link view">
+                    <IconLink size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    style={s.iconBtn}
+                    title={addPanelOpen ? 'Close panel' : 'Add site groups'}
+                    aria-label={addPanelOpen ? 'Close panel' : 'Add site groups'}
+                    onClick={() => {
+                      if (addPanelOpen) {
+                        setAddPanelOpen(false);
+                        if (editingId) resetForm();
+                        if (editingGroupId) setEditingGroupId(null);
+                      } else {
+                        setEditingId(null);
+                        setEditingGroupId(null);
+                        resetForm();
+                        setGroupForm({ name: '', parent_group_id: defaultGroupId || '' });
+                        setBulkAddGroupId(defaultGroupId || '');
+                        setBulkAddText('');
+                        setBulkAddResult({ created: 0, failed: 0, errors: [] });
+                        setAddPanelOpen(true);
+                      }
+                    }}
+                  >
+                    {addPanelOpen ? <IconMinus size={16} /> : <IconPlus size={16} />}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" style={{ ...s.iconBtn, ...(viewMode === 'grid' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewMode('grid')} title="Grid view" aria-label="Grid view">
+                    <IconGrid size={16} />
+                  </button>
+                  <button type="button" style={{ ...s.iconBtn, ...(viewMode === 'ticket' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewMode('ticket')} title="Ticket view" aria-label="Ticket view">
+                    <IconTicket size={16} />
+                  </button>
+                  <button type="button" style={{ ...s.iconBtn, ...(viewMode === 'graph' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewMode('graph')} title="Link view (Site Name vs Site Group)" aria-label="Link view">
+                    <IconLink size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    style={s.iconBtn}
+                    title={addPanelOpen ? 'Close panel' : 'Add sites'}
+                    aria-label={addPanelOpen ? 'Close panel' : 'Add sites'}
+                    onClick={() => {
+                      if (addPanelOpen) {
+                        setAddPanelOpen(false);
+                        if (editingId) resetForm();
+                        if (editingGroupId) setEditingGroupId(null);
+                      } else {
+                        setEditingId(null);
+                        setEditingGroupId(null);
+                        resetForm();
+                        setGroupForm({ name: '', parent_group_id: defaultGroupId || '' });
+                        setBulkAddGroupId(defaultGroupId || '');
+                        setBulkAddText('');
+                        setBulkAddResult({ created: 0, failed: 0, errors: [] });
+                        setAddPanelOpen(true);
+                      }
+                    }}
+                  >
+                    {addPanelOpen ? <IconMinus size={16} /> : <IconPlus size={16} />}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
         </div>
         {activeTab === 'group' ? (
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: 12, marginBottom: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                <input
-                  type="text"
-                  placeholder="Search…"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{ ...s.input, width: 140 }}
-                />
-                {searchWord && (
-                  <>
-                    <span style={{ fontSize: t.fontSize.sm, color: t.color.textMuted, whiteSpace: 'nowrap' }}>
-                      {matchCount > 0 ? `${(currentMatchIndex % matchCount) + 1} of ${matchCount}` : '0 matches'}
-                    </span>
-                    <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '4px 10px' }} onClick={() => setCurrentMatchIndex((i) => (i - 1 + matchCount) % matchCount)} disabled={matchCount === 0}>Prev</button>
-                    <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '4px 10px' }} onClick={() => setCurrentMatchIndex((i) => (i + 1) % matchCount)} disabled={matchCount === 0}>Next</button>
-                  </>
-                )}
-              </div>
-              <div style={{ display: 'flex', gap: 0 }}>
-                <button type="button" style={{ ...s.iconBtn, ...(viewModeGroup === 'grid' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewModeGroup('grid')} title="Grid view" aria-label="Grid view">
-                  <IconGrid size={16} />
-                </button>
-                <button type="button" style={{ ...s.iconBtn, ...(viewModeGroup === 'ticket' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewModeGroup('ticket')} title="Ticket view" aria-label="Ticket view">
-                  <IconTicket size={16} />
-                </button>
-                <button type="button" style={{ ...s.iconBtn, ...(viewModeGroup === 'graph' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewModeGroup('graph')} title="Link view (Name vs Parent group)" aria-label="Link view">
-                  <IconLink size={16} />
-                </button>
-                <button
-                  type="button"
-                  style={s.iconBtn}
-                  title={addPanelOpen ? 'Close panel' : 'Add site groups'}
-                  aria-label={addPanelOpen ? 'Close panel' : 'Add site groups'}
-                  onClick={() => {
-                    if (addPanelOpen) {
-                      setAddPanelOpen(false);
-                      if (editingId) resetForm();
-                      if (editingGroupId) setEditingGroupId(null);
-                    } else {
-                      setEditingId(null);
-                      setEditingGroupId(null);
-                      resetForm();
-                      setGroupForm({ name: '', parent_group_id: defaultGroupId || '' });
-                      setBulkAddGroupId(defaultGroupId || '');
-                      setBulkAddText('');
-                      setBulkAddResult({ created: 0, failed: 0, errors: [] });
-                      setAddPanelOpen(true);
-                    }
-                  }}
-                >
-                  {addPanelOpen ? <IconMinus size={16} /> : <IconPlus size={16} />}
-                </button>
-              </div>
-            </div>
             {/* Site groups: grid, ticket, or graph */}
             <div style={{ marginTop: 0, flex: 1, minHeight: 0, overflow: viewModeGroup === 'graph' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column' }}>
               {groups.length === 0 ? (
@@ -1269,61 +1311,6 @@ const nodeW = 170;
           </div>
         ) : (
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: 12, marginBottom: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                <input
-                  type="text"
-                  placeholder="Search…"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{ ...s.input, width: 140 }}
-                />
-                {searchWord && (
-                  <>
-                    <span style={{ fontSize: t.fontSize.sm, color: t.color.textMuted, whiteSpace: 'nowrap' }}>
-                      {matchCount > 0 ? `${(currentMatchIndex % matchCount) + 1} of ${matchCount}` : '0 matches'}
-                    </span>
-                    <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '4px 10px' }} onClick={() => setCurrentMatchIndex((i) => (i - 1 + matchCount) % matchCount)} disabled={matchCount === 0}>Prev</button>
-                    <button type="button" style={{ ...s.btn, ...s.btnSecondary, padding: '4px 10px' }} onClick={() => setCurrentMatchIndex((i) => (i + 1) % matchCount)} disabled={matchCount === 0}>Next</button>
-                  </>
-                )}
-              </div>
-              <div style={{ display: 'flex', gap: 0 }}>
-                <button type="button" style={{ ...s.iconBtn, ...(viewMode === 'grid' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewMode('grid')} title="Grid view" aria-label="Grid view">
-                  <IconGrid size={16} />
-                </button>
-                <button type="button" style={{ ...s.iconBtn, ...(viewMode === 'ticket' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewMode('ticket')} title="Ticket view" aria-label="Ticket view">
-                  <IconTicket size={16} />
-                </button>
-                <button type="button" style={{ ...s.iconBtn, ...(viewMode === 'graph' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewMode('graph')} title="Link view (Site Name vs Site Group)" aria-label="Link view">
-                  <IconLink size={16} />
-                </button>
-                <button
-                  type="button"
-                  style={s.iconBtn}
-                  title={addPanelOpen ? 'Close panel' : 'Add sites'}
-                  aria-label={addPanelOpen ? 'Close panel' : 'Add sites'}
-                  onClick={() => {
-                    if (addPanelOpen) {
-                      setAddPanelOpen(false);
-                      if (editingId) resetForm();
-                      if (editingGroupId) setEditingGroupId(null);
-                    } else {
-                      setEditingId(null);
-                      setEditingGroupId(null);
-                      resetForm();
-                      setGroupForm({ name: '', parent_group_id: defaultGroupId || '' });
-                      setBulkAddGroupId(defaultGroupId || '');
-                      setBulkAddText('');
-                      setBulkAddResult({ created: 0, failed: 0, errors: [] });
-                      setAddPanelOpen(true);
-                    }
-                  }}
-                >
-                  {addPanelOpen ? <IconMinus size={16} /> : <IconPlus size={16} />}
-                </button>
-              </div>
-            </div>
             {/* Sites: grid, ticket, or graph */}
             <div style={{ marginTop: 0, flex: 1, minHeight: 0, overflow: viewMode === 'graph' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column' }}>
               {viewMode === 'graph' ? (
