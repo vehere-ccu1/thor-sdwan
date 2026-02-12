@@ -19,11 +19,11 @@ def dashboard_summary():
     users = execute(
         f"SELECT count() FROM {CLICKHOUSE_DATABASE}.users FINAL"
     )
-    organizations = execute(
-        f"SELECT count() FROM {CLICKHOUSE_DATABASE}.organizations FINAL"
+    sites = execute(
+        f"SELECT count() FROM {CLICKHOUSE_DATABASE}.sites FINAL"
     )
     return {
         "accounts": accounts[0][0] if accounts else 0,
         "users": users[0][0] if users else 0,
-        "organizations": organizations[0][0] if organizations else 0,
+        "organizations": sites[0][0] if sites else 0,
     }

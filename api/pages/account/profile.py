@@ -175,7 +175,7 @@ def delete_account(request: Request, account_id: str):
 
     # 1. Organization tokens (for all orgs in this account)
     org_rows = execute(
-        f"SELECT id FROM {CLICKHOUSE_DATABASE}.organizations FINAL WHERE account_id = %(account_id)s",
+        f"SELECT id FROM {CLICKHOUSE_DATABASE}.sites FINAL WHERE account_id = %(account_id)s",
         params,
     )
     org_ids = [str(r[0]) for r in org_rows] if org_rows else []
@@ -185,9 +185,9 @@ def delete_account(request: Request, account_id: str):
             {"org_ids": tuple(org_ids)},
         )
 
-    # 2. Organizations (sites / master-organization)
+    # 2. Sites (Site Management)
     client.execute(
-        f"ALTER TABLE {CLICKHOUSE_DATABASE}.organizations DELETE WHERE account_id = %(account_id)s",
+        f"ALTER TABLE {CLICKHOUSE_DATABASE}.sites DELETE WHERE account_id = %(account_id)s",
         params,
     )
 

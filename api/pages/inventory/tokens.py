@@ -22,7 +22,7 @@ def list_tokens(organization_id: str | None = None):
     cols = ["id", "organization_id", "organization_name", "label", "created_at", "updated_at"]
     q = f"""SELECT t.id, t.organization_id, o.name AS organization_name, t.label, t.created_at, t.updated_at
 FROM {CLICKHOUSE_DATABASE}.organization_tokens t
-LEFT JOIN {CLICKHOUSE_DATABASE}.organizations o ON t.organization_id = o.id
+LEFT JOIN {CLICKHOUSE_DATABASE}.sites o ON t.organization_id = o.id
 FINAL
 WHERE t.revoked = 0"""
     params = {}
@@ -38,7 +38,7 @@ WHERE t.revoked = 0"""
 def create_token(body: TokenCreate):
     org_id = UUID(body.organization_id)
     existing = execute(
-        f"SELECT name FROM {CLICKHOUSE_DATABASE}.organizations FINAL WHERE id = %(id)s",
+        f"SELECT name FROM {CLICKHOUSE_DATABASE}.sites FINAL WHERE id = %(id)s",
         {"id": str(org_id)},
     )
     if not existing:

@@ -39,8 +39,8 @@ class GroupUpdate(BaseModel):
     parent_group_id: str | None = None
 
 
-# ---------- Organization ----------
-class OrganizationCreate(BaseModel):
+# ---------- Site (Site Management; table: sites) ----------
+class SiteCreate(BaseModel):
     account_id: str
     group_id: str | None = None
     name: str
@@ -49,7 +49,7 @@ class OrganizationCreate(BaseModel):
     is_default: bool = False
 
 
-class OrganizationUpdate(BaseModel):
+class SiteUpdate(BaseModel):
     group_id: str | None = None
     name: str | None = None
     group_name: str | None = None

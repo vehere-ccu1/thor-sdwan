@@ -8,7 +8,7 @@ export const menuItems = [
     label: 'Account',
     children: [
       { path: '/account/profile', label: 'Profile' },
-      { path: '/account/organization', label: 'Organization' },
+      { path: '/account/sites', label: 'Site Management' },
       // Users page shown under Account section; route stays /users
       { path: '/users', label: 'User Management' },
     ],

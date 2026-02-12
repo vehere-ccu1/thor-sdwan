@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { getDataPageStyles } from '../styles/dataPageStyles';
@@ -248,6 +248,13 @@ export default function Users() {
   const [formPermissions, setFormPermissions] = useState([]);
   const [organizations, setOrganizations] = useState([]);
   const [groups, setGroups] = useState([]);
+  const [graphZoom, setGraphZoom] = useState(1);
+  const [sortKey, setSortKey] = useState('name');
+  const [sortDir, setSortDir] = useState('asc');
+  const [selectedUserIds, setSelectedUserIds] = useState(new Set());
+  const [panning, setPanning] = useState(false);
+  const panStartRef = useRef(null);
+  const hasCenteredGraphRef = useRef(false);
 
   const resetForm = () => {
     setForm({
@@ -478,21 +485,64 @@ export default function Users() {
     }
   };
 
-  // Grid columns: Name, Job Title, Email, Account, Role, ..., Created-At, Action (single column for all icon buttons)
+  // Grid columns: checkbox, Name, Job Title, Email, Account, Role, ..., Created-At, Action
   const gridCols =
-    'minmax(0,1.1fr) minmax(0,1fr) minmax(0,1.1fr) minmax(0,1fr) minmax(80px,100px) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(100px,120px) minmax(140px,180px)';
+    '32px minmax(0,1.1fr) minmax(0,1fr) minmax(0,1.1fr) minmax(0,1fr) minmax(80px,100px) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(100px,120px) minmax(140px,180px)';
   const { theme: t } = useTheme();
   const s = getDataPageStyles(t);
   const graphContainerRef = useRef(null);
-  const [graphHeight, setGraphHeight] = useState(520);
+  const [graphSize, setGraphSize] = useState({ width: 800, height: 400 });
   useEffect(() => {
-    if (viewMode !== 'graph' || !graphContainerRef.current) return;
     const el = graphContainerRef.current;
-    setGraphHeight(el.offsetHeight || 520);
-    const ro = new ResizeObserver(() => setGraphHeight(el.offsetHeight || 520));
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (rect && typeof rect.width === 'number' && typeof rect.height === 'number') {
+        setGraphSize({ width: Math.max(rect.width, 400), height: Math.max(rect.height, 300) });
+      }
+    });
     ro.observe(el);
     return () => ro.disconnect();
   }, [viewMode]);
+  useEffect(() => {
+    const el = graphContainerRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      const delta = -e.deltaY * 0.002;
+      e.preventDefault();
+      setGraphZoom((z) => {
+        const next = z + delta;
+        if ((next < 0.5 && delta < 0) || (next > 2 && delta > 0)) return z;
+        return Math.min(2, Math.max(0.5, next));
+      });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [viewMode]);
+  const startPan = useCallback((e) => {
+    if (e.target.closest('g') || e.target.closest('button')) return;
+    const el = graphContainerRef.current;
+    if (!el) return;
+    e.preventDefault();
+    e.stopPropagation();
+    panStartRef.current = { x: e.clientX, y: e.clientY, scrollLeft: el.scrollLeft, scrollTop: el.scrollTop };
+    setPanning(true);
+    const onMove = (ev) => {
+      if (!panStartRef.current) return;
+      const container = graphContainerRef.current;
+      if (!container) return;
+      container.scrollLeft = panStartRef.current.scrollLeft + (panStartRef.current.x - ev.clientX);
+      container.scrollTop = panStartRef.current.scrollTop + (panStartRef.current.y - ev.clientY);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      setPanning(false);
+      panStartRef.current = null;
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, []);
 
   // Graph data for link view: nodes = users, links = created_by -> user (tree of "created by" relationships)
   const graphData = useMemo(() => {
@@ -589,22 +639,27 @@ export default function Users() {
       if (!byLevel.has(L)) byLevel.set(L, []);
       byLevel.get(L).push(n.id);
     });
-    const width = 800;
-    const height = Math.max(graphHeight, 400);
     const nodeWidth = 170;
     const nodeHeight = 56;
     const padding = 40;
+    const gap = 24;
+    const levelCount = byLevel.size;
+    const maxLevelWidth = levelCount === 0 ? 0 : Math.max(...Array.from(byLevel.values()).map((ids) => ids.length * (nodeWidth + gap) - gap));
+    const contentMinWidth = maxLevelWidth + 2 * padding;
+    const contentMinHeight = levelCount * (nodeHeight + 40) + 2 * padding;
+    const width = Math.max(graphSize.width, contentMinWidth, 400);
+    const height = Math.max(graphSize.height, contentMinHeight, 300);
     const positions = {};
     byLevel.forEach((ids, L) => {
       const y = padding + L * (nodeHeight + 40);
-      const totalW = ids.length * (nodeWidth + 24) - 24;
-      const startX = (width - totalW) / 2 + nodeWidth / 2 + 12;
+      const totalW = ids.length * (nodeWidth + gap) - gap;
+      const startX = (width - totalW) / 2 + nodeWidth / 2 + gap / 2;
       ids.forEach((id, i) => {
-        positions[id] = { x: startX + i * (nodeWidth + 24), y };
+        positions[id] = { x: startX + i * (nodeWidth + gap), y };
       });
     });
     return { positions, width, height };
-  }, [graphData, visibleIds, levelMap, graphHeight]);
+  }, [graphData, visibleIds, levelMap, graphSize]);
 
   // Search: substring match across columns, highlight, Prev/Next, scroll into view
   const [searchQuery, setSearchQuery] = useState('');
@@ -619,6 +674,24 @@ export default function Users() {
     setNodePositions({ ...graphLayout.positions });
   }, [graphLayout]);
   const getEffectivePos = (id) => nodePositions[id] ?? graphLayout.positions[id];
+  useEffect(() => {
+    if (viewMode !== 'graph') {
+      hasCenteredGraphRef.current = false;
+      return;
+    }
+    const el = graphContainerRef.current;
+    if (!el || hasCenteredGraphRef.current) return;
+    const id = requestAnimationFrame(() => {
+      const cw = el.clientWidth;
+      const ch = el.clientHeight;
+      const contentW = graphLayout.width * graphZoom;
+      const contentH = graphLayout.height * graphZoom;
+      if (contentW > cw) el.scrollLeft = (contentW - cw) / 2;
+      if (contentH > ch) el.scrollTop = (contentH - ch) / 2;
+      hasCenteredGraphRef.current = true;
+    });
+    return () => cancelAnimationFrame(id);
+  }, [viewMode, graphLayout.width, graphLayout.height, graphZoom]);
   useEffect(() => {
     if (!draggingNodeId || !graphSvgRef.current) return;
     const svg = graphSvgRef.current;
@@ -729,6 +802,23 @@ export default function Users() {
     return u ? (u.name || u.email || id) : (id.length > 8 ? id.slice(0, 8) + '…' : id);
   };
   const formatDate = (v) => (v ? new Date(v).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '—');
+  const sortedRecords = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...records].sort((a, b) => {
+      let va, vb;
+      if (sortKey === 'name') { va = (a.name || ''); vb = (b.name || ''); }
+      else if (sortKey === 'job_title') { va = (a.job_title || ''); vb = (b.job_title || ''); }
+      else if (sortKey === 'email') { va = (a.email || ''); vb = (b.email || ''); }
+      else if (sortKey === 'account') { va = accountName(a.account_id); vb = accountName(b.account_id); }
+      else if (sortKey === 'role') { va = (a.is_owner ? 'Owner' : (a.role_name || '')); vb = (b.is_owner ? 'Owner' : (b.role_name || '')); }
+      else if (sortKey === 'master_owner') { va = userLabel(a.master_owner_user_id); vb = userLabel(b.master_owner_user_id); }
+      else if (sortKey === 'created_by') { va = userLabel(a.created_by_user_id); vb = userLabel(b.created_by_user_id); }
+      else if (sortKey === 'organizations') { va = Array.isArray(a.organizations) ? a.organizations.map(orgLabel).join(', ') : ''; vb = Array.isArray(b.organizations) ? b.organizations.map(orgLabel).join(', ') : ''; }
+      else if (sortKey === 'groups') { va = Array.isArray(a.organization_group_ids) ? a.organization_group_ids.map(groupLabel).join(', ') : ''; vb = Array.isArray(b.organization_group_ids) ? b.organization_group_ids.map(groupLabel).join(', ') : ''; }
+      else { va = a.created_at || ''; vb = b.created_at || ''; }
+      return (va < vb ? -1 : va > vb ? 1 : 0) * dir;
+    });
+  }, [records, sortKey, sortDir, accounts, organizations, groups]);
   const editingRecord = editingId ? records.find((r) => r.id === editingId) : null;
   const isEditingMasterOwner = editingRecord?.is_owner === true;
   const searchWord = searchQuery.trim().toLowerCase();
@@ -1027,23 +1117,37 @@ export default function Users() {
       {records.length === 0 ? (
         <p style={s.empty}>No users. Create an account first (Account Profile), then add users above.</p>
       ) : viewMode === 'graph' ? (
-        <div ref={graphContainerRef} style={{ flex: 1, minHeight: 0, background: t.color.surface, borderRadius: 8, overflow: 'auto' }}>
-          <svg
-            ref={graphSvgRef}
-            viewBox={`0 0 ${graphLayout.width} ${graphLayout.height}`}
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: t.color.surface, borderRadius: 8 }}>
+          <div
+            ref={graphContainerRef}
             style={{
-              display: 'block',
-              width: '100%',
-              minWidth: graphLayout.width,
-              minHeight: graphLayout.height,
-              cursor: draggingNodeId ? 'grabbing' : undefined,
+              flex: 1,
+              minHeight: 0,
+              overflowX: 'auto',
+              overflowY: 'auto',
+              cursor: panning ? 'grabbing' : draggingNodeId ? undefined : 'grab',
+              userSelect: panning ? 'none' : undefined,
             }}
+            onMouseDown={startPan}
           >
+            <div style={{ width: graphLayout.width * graphZoom, height: graphLayout.height * graphZoom, display: 'block' }}>
+              <div style={{ transform: `scale(${graphZoom})`, transformOrigin: '0 0', width: graphLayout.width, height: graphLayout.height }}>
+                <svg
+                  ref={graphSvgRef}
+                  viewBox={`0 0 ${graphLayout.width} ${graphLayout.height}`}
+                  style={{
+                    display: 'block',
+                    width: graphLayout.width,
+                    height: graphLayout.height,
+                    cursor: draggingNodeId ? 'grabbing' : undefined,
+                  }}
+                >
             <defs>
               <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
                 <path d="M0,0 L8,4 L0,8 Z" fill={t.color.textMuted || t.color.text} />
               </marker>
             </defs>
+            <rect x={0} y={0} width={graphLayout.width} height={graphLayout.height} fill="transparent" style={{ pointerEvents: 'all' }} aria-hidden="true" />
             {graphData.links
               .filter((link) => visibleIds.has(link.source) && visibleIds.has(link.target))
               .map((link, i) => {
@@ -1247,25 +1351,59 @@ export default function Users() {
                   </g>
                 );
               })}
-          </svg>
+                </svg>
+              </div>
+            </div>
+          </div>
         </div>
       ) : viewMode === 'grid' ? (
         <div style={{ ...s.gridWrapper, flex: 1, minHeight: 0 }}>
+          {selectedUserIds.size > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <button
+                type="button"
+                style={{ ...s.btn, ...s.btnDanger }}
+                onClick={async () => {
+                  const toDelete = [...selectedUserIds].filter((id) => {
+                    const r = records.find((x) => String(x.id) === id);
+                    return r && !r.is_owner;
+                  });
+                  if (toDelete.length === 0) {
+                    alert('No deletable users in selection (owners cannot be deleted).');
+                    return;
+                  }
+                  if (!window.confirm(`Delete ${toDelete.length} selected user(s)?`)) return;
+                  for (const id of toDelete) {
+                    const res = await deleteUser(id);
+                    if (res && res.deleted) setRecords((prev) => prev.filter((r) => String(r.id) !== id));
+                  }
+                  if (currentAccountId) fetchUsers(currentAccountId).then((list) => setRecords(Array.isArray(list) ? list : []));
+                  setSelectedUserIds(new Set());
+                }}
+              >
+                Delete selected ({selectedUserIds.size})
+              </button>
+            </div>
+          )}
           <div style={{ ...s.grid(gridCols), ...s.gridHeader }}>
-            <span>Name</span>
-            <span>Job Title</span>
-            <span>Email</span>
-            <span>Account</span>
-            <span>Role</span>
-            <span>Master-Owner</span>
-            <span>Created-By</span>
-            <span>Organizations</span>
-            <span>Groups</span>
-            <span>Created-At</span>
+            <span style={{ display: 'flex', alignItems: 'center' }}>
+              <input type="checkbox" checked={sortedRecords.length > 0 && sortedRecords.every((r) => selectedUserIds.has(String(r.id)))} onChange={(e) => setSelectedUserIds(e.target.checked ? new Set(sortedRecords.map((r) => String(r.id))) : new Set())} style={{ margin: 0 }} />
+            </span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('name'); setSortDir((d) => (sortKey === 'name' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Name {sortKey === 'name' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('job_title'); setSortDir((d) => (sortKey === 'job_title' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Job Title {sortKey === 'job_title' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('email'); setSortDir((d) => (sortKey === 'email' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Email {sortKey === 'email' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('account'); setSortDir((d) => (sortKey === 'account' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Account {sortKey === 'account' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('role'); setSortDir((d) => (sortKey === 'role' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Role {sortKey === 'role' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('master_owner'); setSortDir((d) => (sortKey === 'master_owner' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Master-Owner {sortKey === 'master_owner' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('created_by'); setSortDir((d) => (sortKey === 'created_by' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Created-By {sortKey === 'created_by' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('organizations'); setSortDir((d) => (sortKey === 'organizations' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Organizations {sortKey === 'organizations' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('groups'); setSortDir((d) => (sortKey === 'groups' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Groups {sortKey === 'groups' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('created_at'); setSortDir((d) => (sortKey === 'created_at' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Created-At {sortKey === 'created_at' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
             <span>Action</span>
           </div>
-          {records.map((r) => (
+          {sortedRecords.map((r) => (
             <div key={r.id} ref={(el) => { if (el) searchScrollRefs.current[String(r.id)] = el; }} style={{ ...s.grid(gridCols), ...(currentMatchId === String(r.id) ? { backgroundColor: '#fef3c7', borderLeft: '4px solid #b45309', outline: '2px solid #d97706', outlineOffset: '-2px', color: '#000' } : {}) }}>
+              <span style={{ display: 'flex', alignItems: 'center' }}><input type="checkbox" checked={selectedUserIds.has(String(r.id))} onChange={() => setSelectedUserIds((prev) => { const next = new Set(prev); if (next.has(String(r.id))) next.delete(String(r.id)); else next.add(String(r.id)); return next; })} style={{ margin: 0 }} /></span>
               <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name || '—'}</span>
               <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.job_title || '—'}</span>
               <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.email}</span>

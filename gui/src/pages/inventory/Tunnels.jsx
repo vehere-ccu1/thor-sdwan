@@ -42,6 +42,9 @@ export default function Tunnels() {
   const [columnSelect, setColumnSelect] = useState(false);
   const [valueSelect, setValueSelect] = useState(false);
   const [selectedColumn, setSelectedColumn] = useState(null);
+  const [sortKey, setSortKey] = useState('id');
+  const [sortDir, setSortDir] = useState('asc');
+  const [selectedIds, setSelectedIds] = useState(new Set());
   const searchRef = useRef(null);
 
   const filteredRows = useMemo(() => {
@@ -62,6 +65,15 @@ export default function Tunnels() {
     });
     return o;
   }, [rows]);
+
+  const sortedRows = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...filteredRows].sort((a, b) => {
+      const va = sortKey === 'encrypt' ? (a[sortKey] ? 'Yes' : 'No') : String(a[sortKey] ?? '');
+      const vb = sortKey === 'encrypt' ? (b[sortKey] ? 'Yes' : 'No') : String(b[sortKey] ?? '');
+      return (va < vb ? -1 : va > vb ? 1 : 0) * dir;
+    });
+  }, [filteredRows, sortKey, sortDir]);
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -91,7 +103,7 @@ export default function Tunnels() {
     if (window.confirm('Delete this tunnel?')) setRows((prev) => prev.filter((r) => r.id !== id));
   };
 
-  const gridCols = '60px 90px 90px 100px 90px 70px 90px 80px 60px 80px 80px';
+  const gridCols = '32px 60px 90px 90px 100px 90px 70px 90px 80px 60px 80px 80px';
 
   return (
     <div style={s.page}>
@@ -266,21 +278,34 @@ export default function Tunnels() {
         <p style={s.empty}>No tunnels match the current filters.</p>
       ) : viewMode === 'grid' ? (
         <>
+          {selectedIds.size > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <button type="button" style={{ ...s.btn, ...s.btnDanger }} onClick={() => {
+                if (!window.confirm(`Delete ${selectedIds.size} selected tunnel(s)?`)) return;
+                setRows((prev) => prev.filter((r) => !selectedIds.has(String(r.id))));
+                setSelectedIds(new Set());
+              }}>
+                Delete selected ({selectedIds.size})
+              </button>
+            </div>
+          )}
           <div style={{ ...s.grid(gridCols), ...s.gridHeader }}>
-            <span>ID</span>
-            <span>Device-A</span>
-            <span>Interface-A</span>
-            <span>Device-B/Peer</span>
-            <span>Interface-B</span>
-            <span>Path-Label</span>
-            <span>Avg-Latency</span>
-            <span>Drop Rate</span>
-            <span>Encrypt</span>
-            <span>Status</span>
+            <span style={{ display: 'flex', alignItems: 'center' }}><input type="checkbox" checked={sortedRows.length > 0 && sortedRows.every((r) => selectedIds.has(String(r.id)))} onChange={(e) => setSelectedIds(e.target.checked ? new Set(sortedRows.map((r) => String(r.id))) : new Set())} style={{ margin: 0 }} /></span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('id'); setSortDir((d) => (sortKey === 'id' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>ID {sortKey === 'id' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('deviceA'); setSortDir((d) => (sortKey === 'deviceA' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Device-A {sortKey === 'deviceA' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('interfaceA'); setSortDir((d) => (sortKey === 'interfaceA' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Interface-A {sortKey === 'interfaceA' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('deviceBPeer'); setSortDir((d) => (sortKey === 'deviceBPeer' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Device-B/Peer {sortKey === 'deviceBPeer' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('interfaceB'); setSortDir((d) => (sortKey === 'interfaceB' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Interface-B {sortKey === 'interfaceB' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('pathLabel'); setSortDir((d) => (sortKey === 'pathLabel' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Path-Label {sortKey === 'pathLabel' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('avgLatency'); setSortDir((d) => (sortKey === 'avgLatency' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Avg-Latency {sortKey === 'avgLatency' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('dropRate'); setSortDir((d) => (sortKey === 'dropRate' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Drop Rate {sortKey === 'dropRate' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('encrypt'); setSortDir((d) => (sortKey === 'encrypt' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Encrypt {sortKey === 'encrypt' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('status'); setSortDir((d) => (sortKey === 'status' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Status {sortKey === 'status' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
             <span>Action</span>
           </div>
-          {filteredRows.map((r) => (
+          {sortedRows.map((r) => (
             <div key={r.id} style={s.grid(gridCols)}>
+              <span style={{ display: 'flex', alignItems: 'center' }}><input type="checkbox" checked={selectedIds.has(String(r.id))} onChange={() => setSelectedIds((prev) => { const next = new Set(prev); if (next.has(String(r.id))) next.delete(String(r.id)); else next.add(String(r.id)); return next; })} style={{ margin: 0 }} /></span>
               <span>{r.id}</span>
               <span>{r.deviceA}</span>
               <span>{r.interfaceA}</span>

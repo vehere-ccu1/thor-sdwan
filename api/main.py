@@ -4,15 +4,20 @@ Stores data in ClickHouse. Run: uvicorn main:app --host 0.0.0.0 --port 3443
 All route logic lives in pages/* modules; this file assembles the app and health.
 On startup, missing tables are created by running SQL from the project db/ folder.
 """
+import hashlib
 import logging
 import os
 import threading
 
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import API_PREFIX, LOG_PATH
-from db import get_client
+from config import API_PREFIX, DB_TYPE, HANDSHAKING_TOKEN, LOG_PATH
+from db_wrapper import check_current_db_health
 from schema_sync import ensure_schema
 
 # Configure logging to file under LOG_PATH (and keep console)
@@ -35,7 +40,36 @@ logger = logging.getLogger(__name__)
 
 PREFIX = API_PREFIX
 
+# Paths that do not require handshaking (config dialog, login, forgot-password)
+SKIP_HANDSHAKING_SUFFIXES = (
+    "/config/test-api",
+    "/config/test-db",
+    "/config/save",
+    "/login",
+    "/forgot-password/request-otp",
+    "/forgot-password/reset",
+    "/create-owner-account",
+)
+
+
+class HandshakingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if HANDSHAKING_TOKEN and request.url.path.startswith(PREFIX):
+            path = request.url.path[len(PREFIX):].lstrip("/")
+            path_with_slash = "/" + path
+            if not any(path_with_slash == s or path_with_slash.startswith(s + "/") for s in SKIP_HANDSHAKING_SUFFIXES):
+                x_hash = request.headers.get("X-API-Hash", "")
+                x_random = request.headers.get("X-API-Random", "")
+                if not x_random or not x_hash:
+                    return JSONResponse(status_code=401, content={"detail": "Missing X-API-Hash or X-API-Random"})
+                expected = hashlib.sha256((HANDSHAKING_TOKEN + x_random).encode("utf-8")).hexdigest()
+                if x_hash.strip().lower() != expected.lower():
+                    return JSONResponse(status_code=401, content={"detail": "Invalid handshaking hash"})
+        return await call_next(request)
+
+
 app = FastAPI(title="Thor SD-WAN CMS API", version="1.0.0")
+app.add_middleware(HandshakingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -67,11 +101,11 @@ def on_startup():
 
 @app.get(f"{PREFIX}/health")
 def health():
-    try:
-        get_client().execute("SELECT 1")
-        return {"status": "ok", "database": "clickhouse"}
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Database: {e!s}")
+    """Health check. Handshaking validated by middleware when token is set. DB connectivity for configured db_type."""
+    ok, msg = check_current_db_health()
+    if not ok:
+        raise HTTPException(status_code=503, detail=f"Database: {msg}")
+    return {"status": "ok", "database": DB_TYPE}
 
 
 # Include all page routers (each defines its own routes under PREFIX)

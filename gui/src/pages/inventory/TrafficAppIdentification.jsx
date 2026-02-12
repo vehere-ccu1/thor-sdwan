@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 import { getDataPageStyles } from '../../styles/dataPageStyles';
@@ -33,6 +33,12 @@ export default function TrafficAppIdentification() {
   const [addPanelExpanded, setAddPanelExpanded] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editingPredefine, setEditingPredefine] = useState(false);
+  const [sortKeyManual, setSortKeyManual] = useState('name');
+  const [sortDirManual, setSortDirManual] = useState('asc');
+  const [selectedManualIds, setSelectedManualIds] = useState(new Set());
+  const [sortKeyPredefine, setSortKeyPredefine] = useState('name');
+  const [sortDirPredefine, setSortDirPredefine] = useState('asc');
+  const [selectedPredefineIds, setSelectedPredefineIds] = useState(new Set());
   const [form, setForm] = useState({
     name: '',
     description: '',
@@ -134,7 +140,23 @@ export default function TrafficAppIdentification() {
     window.alert('Refresh from source (placeholder)');
   };
 
-  const gridCols = '1fr 1fr 100px 100px 90px 120px';
+  const gridCols = '32px 1fr 1fr 100px 100px 90px 120px';
+
+  const sortedManualRows = useMemo(() => {
+    const dir = sortDirManual === 'asc' ? 1 : -1;
+    return [...manualRows].sort((a, b) => {
+      const va = String(a[sortKeyManual] ?? ''); const vb = String(b[sortKeyManual] ?? '');
+      return (va < vb ? -1 : va > vb ? 1 : 0) * dir;
+    });
+  }, [manualRows, sortKeyManual, sortDirManual]);
+
+  const sortedPredefineRows = useMemo(() => {
+    const dir = sortDirPredefine === 'asc' ? 1 : -1;
+    return [...predefineRows].sort((a, b) => {
+      const va = String(a[sortKeyPredefine] ?? ''); const vb = String(b[sortKeyPredefine] ?? '');
+      return (va < vb ? -1 : va > vb ? 1 : 0) * dir;
+    });
+  }, [predefineRows, sortKeyPredefine, sortDirPredefine]);
 
   const renderGrid = (rows, onUpdate, onDelete, onRefresh, showRefresh) => (
     <>
@@ -318,7 +340,43 @@ export default function TrafficAppIdentification() {
         {manualRows.length === 0 ? (
           <p style={s.empty}>No manual app identifiers. Create one above.</p>
         ) : viewModeManual === 'grid' ? (
-          renderGrid(manualRows, handleEditManual, handleDeleteManual, null, false)
+          <>
+            {selectedManualIds.size > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <button type="button" style={{ ...s.btn, ...s.btnDanger }} onClick={() => {
+                  if (!window.confirm(`Delete ${selectedManualIds.size} selected item(s)?`)) return;
+                  setManualRows((prev) => prev.filter((r) => !selectedManualIds.has(String(r.id))));
+                  setSelectedManualIds(new Set());
+                }}>
+                  Delete selected ({selectedManualIds.size})
+                </button>
+              </div>
+            )}
+            <div style={{ ...s.grid(gridCols), ...s.gridHeader }}>
+              <span style={{ display: 'flex', alignItems: 'center' }}><input type="checkbox" checked={sortedManualRows.length > 0 && sortedManualRows.every((r) => selectedManualIds.has(String(r.id)))} onChange={(e) => setSelectedManualIds(e.target.checked ? new Set(sortedManualRows.map((r) => String(r.id))) : new Set())} style={{ margin: 0 }} /></span>
+              <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKeyManual('name'); setSortDirManual((d) => (sortKeyManual === 'name' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Name {sortKeyManual === 'name' ? (sortDirManual === 'asc' ? '▲' : '▼') : ''}</span>
+              <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKeyManual('description'); setSortDirManual((d) => (sortKeyManual === 'description' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Description {sortKeyManual === 'description' ? (sortDirManual === 'asc' ? '▲' : '▼') : ''}</span>
+              <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKeyManual('category'); setSortDirManual((d) => (sortKeyManual === 'category' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Category {sortKeyManual === 'category' ? (sortDirManual === 'asc' ? '▲' : '▼') : ''}</span>
+              <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKeyManual('serviceClass'); setSortDirManual((d) => (sortKeyManual === 'serviceClass' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Service Class {sortKeyManual === 'serviceClass' ? (sortDirManual === 'asc' ? '▲' : '▼') : ''}</span>
+              <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKeyManual('importance'); setSortDirManual((d) => (sortKeyManual === 'importance' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Importance {sortKeyManual === 'importance' ? (sortDirManual === 'asc' ? '▲' : '▼') : ''}</span>
+              <span>Action</span>
+            </div>
+            {sortedManualRows.map((r) => (
+              <div key={r.id} style={s.grid(gridCols)}>
+                <span style={{ display: 'flex', alignItems: 'center' }}><input type="checkbox" checked={selectedManualIds.has(String(r.id))} onChange={() => setSelectedManualIds((prev) => { const next = new Set(prev); if (next.has(String(r.id))) next.delete(String(r.id)); else next.add(String(r.id)); return next; })} style={{ margin: 0 }} /></span>
+                <span>{r.name}</span>
+                <span>{r.description || '—'}</span>
+                <span>{r.category || '—'}</span>
+                <span>{r.serviceClass || '—'}</span>
+                <span>{r.importance || '—'}</span>
+                <div style={s.actions}>
+                  <button type="button" style={s.iconBtn} onClick={() => navigate('/inventory/tokens')} title="Generate Token"><IconKey size={16} /></button>
+                  <button type="button" style={s.iconBtn} onClick={() => handleEditManual(r)} title="Update"><IconEdit size={16} /></button>
+                  <button type="button" style={s.iconBtn} onClick={() => handleDeleteManual(r.id)} title="Delete"><IconTrash size={16} /></button>
+                </div>
+              </div>
+            ))}
+          </>
         ) : (
           renderTickets(manualRows, handleEditManual, handleDeleteManual, null, false)
         )}
@@ -342,7 +400,32 @@ export default function TrafficAppIdentification() {
         </div>
 
         {viewModePredefine === 'grid' ? (
-          renderGrid(predefineRows, handleEditPredefine, null, handleRefreshPredefine, true)
+          <>
+            <div style={{ ...s.grid(gridCols), ...s.gridHeader }}>
+              <span style={{ display: 'flex', alignItems: 'center' }}><input type="checkbox" checked={sortedPredefineRows.length > 0 && sortedPredefineRows.every((r) => selectedPredefineIds.has(String(r.id)))} onChange={(e) => setSelectedPredefineIds(e.target.checked ? new Set(sortedPredefineRows.map((r) => String(r.id))) : new Set())} style={{ margin: 0 }} /></span>
+              <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKeyPredefine('name'); setSortDirPredefine((d) => (sortKeyPredefine === 'name' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Name {sortKeyPredefine === 'name' ? (sortDirPredefine === 'asc' ? '▲' : '▼') : ''}</span>
+              <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKeyPredefine('description'); setSortDirPredefine((d) => (sortKeyPredefine === 'description' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Description {sortKeyPredefine === 'description' ? (sortDirPredefine === 'asc' ? '▲' : '▼') : ''}</span>
+              <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKeyPredefine('category'); setSortDirPredefine((d) => (sortKeyPredefine === 'category' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Category {sortKeyPredefine === 'category' ? (sortDirPredefine === 'asc' ? '▲' : '▼') : ''}</span>
+              <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKeyPredefine('serviceClass'); setSortDirPredefine((d) => (sortKeyPredefine === 'serviceClass' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Service Class {sortKeyPredefine === 'serviceClass' ? (sortDirPredefine === 'asc' ? '▲' : '▼') : ''}</span>
+              <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKeyPredefine('importance'); setSortDirPredefine((d) => (sortKeyPredefine === 'importance' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Importance {sortKeyPredefine === 'importance' ? (sortDirPredefine === 'asc' ? '▲' : '▼') : ''}</span>
+              <span>Action</span>
+            </div>
+            {sortedPredefineRows.map((r) => (
+              <div key={r.id} style={s.grid(gridCols)}>
+                <span style={{ display: 'flex', alignItems: 'center' }}><input type="checkbox" checked={selectedPredefineIds.has(String(r.id))} onChange={() => setSelectedPredefineIds((prev) => { const next = new Set(prev); if (next.has(String(r.id))) next.delete(String(r.id)); else next.add(String(r.id)); return next; })} style={{ margin: 0 }} /></span>
+                <span>{r.name}</span>
+                <span>{r.description || '—'}</span>
+                <span>{r.category || '—'}</span>
+                <span>{r.serviceClass || '—'}</span>
+                <span>{r.importance || '—'}</span>
+                <div style={s.actions}>
+                  <button type="button" style={s.iconBtn} onClick={() => navigate('/inventory/tokens')} title="Generate Token"><IconKey size={16} /></button>
+                  <button type="button" style={s.iconBtn} onClick={() => handleEditPredefine(r)} title="Update"><IconEdit size={16} /></button>
+                  <button type="button" style={s.iconBtn} onClick={() => handleRefreshPredefine(r.id)} title="Refresh">Refresh</button>
+                </div>
+              </div>
+            ))}
+          </>
         ) : (
           renderTickets(predefineRows, handleEditPredefine, null, handleRefreshPredefine, true)
         )}

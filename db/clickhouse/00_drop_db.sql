@@ -1,0 +1,11 @@
+-- Drop the entire ClickHouse database for Thor SD-WAN CMS.
+--
+-- WARNING: This irreversibly deletes ALL CMS data (accounts, users, sites, groups, tokens, etc.).
+--
+-- Usage (manual):
+--   clickhouse-client --multiquery < db/clickhouse/00_drop_db.sql
+--
+-- After dropping, re-run API startup; schema sync will recreate the database and tables.
+--
+-- NOTE: The database name matches db_name in config (default "sdwan_cms").
+DROP DATABASE IF EXISTS sdwan_cms;

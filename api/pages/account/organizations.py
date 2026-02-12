@@ -1,7 +1,7 @@
 """
-API module corresponding to gui/src/pages/account/Organizations.jsx.
-Business logic: groups and organizations CRUD.
-Role-based: owner sees all; non-owner sees only organizations/groups assigned via user_permissions.
+API module corresponding to gui/src/pages/account/Organizations.jsx (Site Management).
+Business logic: groups and sites CRUD.
+Role-based: owner sees all; non-owner sees only sites/groups assigned via user_permissions.
 """
 from uuid import UUID, uuid4
 
@@ -12,16 +12,16 @@ from db import execute, execute_many, get_client
 from models import (
     GroupCreate,
     GroupUpdate,
-    OrganizationCreate,
-    OrganizationUpdate,
+    SiteCreate,
+    SiteUpdate,
     row_to_dict,
 )
 
 router = APIRouter()
 
 GROUP_COLS = ["id", "account_id", "name", "created_at", "updated_at", "master_owner_user_id", "created_by_user_id", "parent_group_id"]
-# View columns (organizations_with_account): includes group_name_resolved
-ORG_COLS = ["id", "account_id", "group_id", "name", "group_name", "tunnel_key_exchange", "is_default", "created_at", "updated_at", "master_owner_user_id", "created_by_user_id", "account_billing_email", "group_name_resolved"]
+# View columns (sites_with_account): includes group_name_resolved
+SITE_COLS = ["id", "account_id", "group_id", "name", "group_name", "tunnel_key_exchange", "is_default", "created_at", "updated_at", "master_owner_user_id", "created_by_user_id", "account_billing_email", "group_name_resolved"]
 
 
 def _requester_owner_and_permitted_entities(request: Request, permission_to: str):
@@ -120,17 +120,17 @@ def delete_group(request: Request, group_id: str):
     return {"deleted": group_id}
 
 
-# ---------- Organizations ----------
-@router.get("/organizations")
-def list_organizations(request: Request, account_id: str | None = None):
+# ---------- Sites ----------
+@router.get("/sites")
+def list_sites(request: Request, account_id: str | None = None):
     x_user_id = (request.headers.get("X-User-Id") or "").strip()
-    q = f"SELECT {','.join(ORG_COLS)} FROM {CLICKHOUSE_DATABASE}.organizations_with_account"
+    q = f"SELECT {','.join(SITE_COLS)} FROM {CLICKHOUSE_DATABASE}.sites_with_account"
     params = {}
     if account_id:
         q += " WHERE account_id = %(account_id)s"
         params["account_id"] = account_id
     rows = execute(q, params)
-    result = [row_to_dict(ORG_COLS, r) for r in rows]
+    result = [row_to_dict(SITE_COLS, r) for r in rows]
     if not x_user_id:
         return result
     is_owner, _req_account_id, permitted = _requester_owner_and_permitted_entities(request, "organization")
@@ -139,33 +139,32 @@ def list_organizations(request: Request, account_id: str | None = None):
     return [r for r in result if r["id"] in permitted]
 
 
-@router.post("/organizations")
-def create_organization(request: Request, body: OrganizationCreate):
+@router.post("/sites")
+def create_site(request: Request, body: SiteCreate):
     uid = uuid4()
     gid = UUID(body.group_id) if body.group_id else UUID("00000000-0000-0000-0000-000000000000")
     x_user_id = (request.headers.get("X-User-Id") or "").strip()
     _nil = UUID("00000000-0000-0000-0000-000000000000")
     created_by = UUID(x_user_id) if x_user_id else _nil
-    # Master-owner from account
     acc = execute(
         f"SELECT master_owner_user_id FROM {CLICKHOUSE_DATABASE}.accounts FINAL WHERE id = %(id)s LIMIT 1",
         {"id": body.account_id},
     )
     raw_master = acc[0][0] if acc and acc[0][0] else None
     master_owner = (raw_master if isinstance(raw_master, UUID) else UUID(str(raw_master))) if raw_master else created_by
-    q = f"""INSERT INTO {CLICKHOUSE_DATABASE}.organizations (id, account_id, group_id, name, group_name, tunnel_key_exchange, is_default, master_owner_user_id, created_by_user_id) VALUES"""
+    q = f"""INSERT INTO {CLICKHOUSE_DATABASE}.sites (id, account_id, group_id, name, group_name, tunnel_key_exchange, is_default, master_owner_user_id, created_by_user_id) VALUES"""
     execute_many(q, [(uid, UUID(body.account_id), gid, body.name, body.group_name or "", body.tunnel_key_exchange, 1 if body.is_default else 0, master_owner, created_by)])
     return {"id": str(uid), "account_id": body.account_id, "name": body.name, "group_id": body.group_id, "is_default": body.is_default}
 
 
-@router.put("/organizations/{org_id}")
-def update_organization(org_id: str, body: OrganizationUpdate):
+@router.put("/sites/{site_id}")
+def update_site(site_id: str, body: SiteUpdate):
     existing = execute(
-        f"SELECT account_id, group_id, name, group_name, tunnel_key_exchange, is_default, master_owner_user_id, created_by_user_id FROM {CLICKHOUSE_DATABASE}.organizations FINAL WHERE id = toUUID(%(id)s)",
-        {"id": org_id},
+        f"SELECT account_id, group_id, name, group_name, tunnel_key_exchange, is_default, master_owner_user_id, created_by_user_id FROM {CLICKHOUSE_DATABASE}.sites FINAL WHERE id = toUUID(%(id)s)",
+        {"id": site_id},
     )
     if not existing:
-        raise HTTPException(status_code=404, detail="Organization not found")
+        raise HTTPException(status_code=404, detail="Site not found")
     r = existing[0]
     _nil = UUID("00000000-0000-0000-0000-000000000000")
     gid = UUID(body.group_id) if body.group_id is not None else r[1]
@@ -175,31 +174,31 @@ def update_organization(org_id: str, body: OrganizationUpdate):
     is_default = (1 if body.is_default else 0) if body.is_default is not None else (r[5] or 0)
     master_owner = r[6] if len(r) > 6 and r[6] else _nil
     created_by = r[7] if len(r) > 7 and r[7] else _nil
-    q = f"""INSERT INTO {CLICKHOUSE_DATABASE}.organizations (id, account_id, group_id, name, group_name, tunnel_key_exchange, is_default, master_owner_user_id, created_by_user_id) VALUES"""
-    execute_many(q, [(UUID(org_id), r[0], gid, name, group_name, tke, is_default, master_owner, created_by)])
-    return {"id": org_id, "name": name, "is_default": bool(is_default)}
+    q = f"""INSERT INTO {CLICKHOUSE_DATABASE}.sites (id, account_id, group_id, name, group_name, tunnel_key_exchange, is_default, master_owner_user_id, created_by_user_id) VALUES"""
+    execute_many(q, [(UUID(site_id), r[0], gid, name, group_name, tke, is_default, master_owner, created_by)])
+    return {"id": site_id, "name": name, "is_default": bool(is_default)}
 
 
-@router.delete("/organizations/{org_id}")
-def delete_organization(request: Request, org_id: str):
+@router.delete("/sites/{site_id}")
+def delete_site(request: Request, site_id: str):
     try:
-        org_uuid = UUID(org_id)
+        UUID(site_id)
     except (ValueError, TypeError):
-        raise HTTPException(status_code=400, detail="Invalid organization id")
+        raise HTTPException(status_code=400, detail="Invalid site id")
     existing = execute(
-        f"SELECT account_id FROM {CLICKHOUSE_DATABASE}.organizations FINAL WHERE id = toUUID(%(id)s) LIMIT 1",
-        {"id": org_id},
+        f"SELECT account_id FROM {CLICKHOUSE_DATABASE}.sites FINAL WHERE id = toUUID(%(id)s) LIMIT 1",
+        {"id": site_id},
     )
     if not existing:
-        raise HTTPException(status_code=404, detail="Organization not found")
+        raise HTTPException(status_code=404, detail="Site not found")
     is_owner, req_account_id, permitted = _requester_owner_and_permitted_entities(request, "organization")
-    if not is_owner and org_id not in permitted:
-        raise HTTPException(status_code=403, detail="You can only delete organizations assigned to you.")
+    if not is_owner and site_id not in permitted:
+        raise HTTPException(status_code=403, detail="You can only delete sites assigned to you.")
     if is_owner and req_account_id and str(existing[0][0]) != req_account_id:
-        raise HTTPException(status_code=403, detail="You can only delete organizations in your account.")
+        raise HTTPException(status_code=403, detail="You can only delete sites in your account.")
     client = get_client()
     client.execute(
-        f"ALTER TABLE {CLICKHOUSE_DATABASE}.organizations DELETE WHERE id = toUUID(%(id)s)",
-        {"id": org_id},
+        f"ALTER TABLE {CLICKHOUSE_DATABASE}.sites DELETE WHERE id = toUUID(%(id)s)",
+        {"id": site_id},
     )
-    return {"deleted": org_id}
+    return {"deleted": site_id}

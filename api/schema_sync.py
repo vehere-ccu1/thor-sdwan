@@ -1,14 +1,17 @@
 """
-Ensure ClickHouse schema exists on API startup.
-Reads SQL files from the project db/ folder (01–06) and runs them in order.
-Tables/views use IF NOT EXISTS or ADD COLUMN IF NOT EXISTS; seed (05) runs only if no users exist.
+Ensure DB schema exists on API startup.
+- When db_type=clickhouse: reads SQL from db/clickhouse/ (01–06), runs ClickHouse DDL and seed.
+- When db_type=mysql: creates database and runs db/mysql/01_schema.sql (requires pymysql).
+- When db_type=elasticsearch: creates index from db/elasticsearch/index_mapping.json.
+- When db_type=mongodb: creates collections (db/mongodb/collections.txt or list in code).
+- When db_type=oracle: use db/oracle/01_schema.sql manually; API can be extended to run it.
 """
 import logging
 import os
 import re
 import time
 
-from config import CLICKHOUSE_DATABASE
+from config import CLICKHOUSE_DATABASE, DB_TYPE, DB_HOST, DB_NAME, DB_PASSWORD, DB_PORT, DB_USER
 from db import get_client, get_client_default_db
 
 logger = logging.getLogger(__name__)
@@ -91,30 +94,30 @@ def _column_exists(client, table_name: str, column_name: str) -> bool:
 
 
 def _ensure_accounts_columns(client) -> None:
-    """Add account_id, group_id to organizations and account_id, is_owner to users if missing (ClickHouse 18.x)."""
+    """Add account_id, group_id to sites and account_id, is_owner to users if missing (ClickHouse 18.x)."""
     default_uuid = "toUUID('00000000-0000-0000-0000-000000000000')"
-    if _table_exists(client, "organizations"):
-        t = f"{CLICKHOUSE_DATABASE}.organizations"
-        if not _column_exists(client, "organizations", "account_id"):
+    if _table_exists(client, "sites"):
+        t = f"{CLICKHOUSE_DATABASE}.sites"
+        if not _column_exists(client, "sites", "account_id"):
             try:
                 client.execute(f"ALTER TABLE {t} ADD COLUMN account_id UUID DEFAULT {default_uuid}")
             except Exception as e:
-                logger.warning("Could not add organizations.account_id: %s", e)
-        if not _column_exists(client, "organizations", "group_id"):
+                logger.warning("Could not add sites.account_id: %s", e)
+        if not _column_exists(client, "sites", "group_id"):
             try:
                 client.execute(f"ALTER TABLE {t} ADD COLUMN group_id UUID DEFAULT {default_uuid}")
             except Exception as e:
-                logger.warning("Could not add organizations.group_id: %s", e)
-        if not _column_exists(client, "organizations", "master_owner_user_id"):
+                logger.warning("Could not add sites.group_id: %s", e)
+        if not _column_exists(client, "sites", "master_owner_user_id"):
             try:
                 client.execute(f"ALTER TABLE {t} ADD COLUMN master_owner_user_id UUID DEFAULT {default_uuid}")
             except Exception as e:
-                logger.warning("Could not add organizations.master_owner_user_id: %s", e)
-        if not _column_exists(client, "organizations", "created_by_user_id"):
+                logger.warning("Could not add sites.master_owner_user_id: %s", e)
+        if not _column_exists(client, "sites", "created_by_user_id"):
             try:
                 client.execute(f"ALTER TABLE {t} ADD COLUMN created_by_user_id UUID DEFAULT {default_uuid}")
             except Exception as e:
-                logger.warning("Could not add organizations.created_by_user_id: %s", e)
+                logger.warning("Could not add sites.created_by_user_id: %s", e)
     if _table_exists(client, "groups"):
         t = f"{CLICKHOUSE_DATABASE}.groups"
         if not _column_exists(client, "groups", "master_owner_user_id"):
@@ -265,14 +268,119 @@ def _ensure_database() -> None:
         logger.warning("Could not create database %s: %s", CLICKHOUSE_DATABASE, e)
 
 
+def _ensure_schema_mysql() -> None:
+    """Create MySQL database and tables from db/mysql/01_schema.sql. Requires pymysql."""
+    try:
+        import pymysql
+    except ImportError:
+        logger.warning("pymysql not installed; skipping MySQL schema sync")
+        return
+    folder = _db_folder()
+    mysql_folder = os.path.join(folder, "mysql")
+    schema_file = os.path.join(mysql_folder, "01_schema.sql")
+    if not os.path.isfile(schema_file):
+        logger.warning("MySQL schema file not found: %s", schema_file)
+        return
+    try:
+        conn_no_db = pymysql.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            user=DB_USER or "root",
+            password=DB_PASSWORD,
+            connect_timeout=10,
+        )
+        with conn_no_db.cursor() as cur:
+            cur.execute(f"CREATE DATABASE IF NOT EXISTS `{DB_NAME}`")
+        conn_no_db.close()
+        conn = pymysql.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            user=DB_USER or "root",
+            password=DB_PASSWORD,
+            database=DB_NAME,
+            connect_timeout=10,
+        )
+        with open(schema_file, encoding="utf-8") as f:
+            content = f.read()
+        for stmt in _split_sql_statements(content):
+            if not stmt.strip():
+                continue
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(stmt)
+            except Exception as e:
+                logger.warning("MySQL schema statement failed: %s", e)
+        conn.close()
+        logger.info("MySQL schema sync completed")
+    except Exception as e:
+        logger.warning("MySQL schema sync failed: %s", e)
+
+
+def _ensure_schema_mongodb() -> None:
+    """Create MongoDB collections (collections are created on first write; we just ensure DB is reachable). Requires pymongo."""
+    try:
+        from pymongo import MongoClient
+        from urllib.parse import quote_plus
+        uri = f"mongodb://{DB_HOST}:{DB_PORT}"
+        if DB_USER or DB_PASSWORD:
+            uri = f"mongodb://{quote_plus(DB_USER or '')}:{quote_plus(DB_PASSWORD or '')}@{DB_HOST}:{DB_PORT}"
+        client = MongoClient(uri, serverSelectionTimeoutMS=10000)
+        db = client[DB_NAME or "sdwan_cms"]
+        for coll_name in ("roles", "users", "accounts", "groups", "sites", "audit_trail", "user_permissions", "organization_tokens", "devices", "vpn_tunnels", "firewall_rules"):
+            if coll_name not in db.list_collection_names():
+                db.create_collection(coll_name)
+        client.close()
+        logger.info("MongoDB schema sync completed")
+    except ImportError:
+        logger.warning("pymongo not installed; skipping MongoDB schema sync")
+    except Exception as e:
+        logger.warning("MongoDB schema sync failed: %s", e)
+
+
+def _ensure_schema_elasticsearch() -> None:
+    """Create Elasticsearch index from db/elasticsearch/index_mapping.json. Requires elasticsearch."""
+    try:
+        from elasticsearch import Elasticsearch
+        folder = _db_folder()
+        mapping_path = os.path.join(folder, "elasticsearch", "index_mapping.json")
+        es = Elasticsearch([{"host": DB_HOST, "port": DB_PORT}], request_timeout=10)
+        index = (DB_NAME or "sdwan_cms").lower().replace(" ", "_")
+        if not es.indices.exists(index=index):
+            if os.path.isfile(mapping_path):
+                import json
+                with open(mapping_path, encoding="utf-8") as f:
+                    body = json.load(f)
+                es.indices.create(index=index, body=body)
+            else:
+                es.indices.create(index=index, body={"mappings": {"properties": {"id": {"type": "keyword"}, "email": {"type": "keyword"}, "ts": {"type": "date"}}}})
+        logger.info("Elasticsearch schema sync completed")
+    except ImportError:
+        logger.warning("elasticsearch not installed; skipping Elasticsearch schema sync")
+    except Exception as e:
+        logger.warning("Elasticsearch schema sync failed: %s", e)
+
+
 def ensure_schema() -> None:
     """
     Ensure database and tables exist. Call on API startup.
-    Creates the database first (using default DB connection), then runs 01–04 and 06; runs 05 (seed) only if no users exist.
+    Dispatches to MySQL, MongoDB, Elasticsearch, or ClickHouse schema sync based on db_type.
     """
+    if DB_TYPE == "mysql":
+        _ensure_schema_mysql()
+        return
+    if DB_TYPE == "mongodb":
+        _ensure_schema_mongodb()
+        return
+    if DB_TYPE == "elasticsearch":
+        _ensure_schema_elasticsearch()
+        return
+    if DB_TYPE != "clickhouse":
+        logger.info("Schema sync not implemented for db_type=%s; skipping", DB_TYPE)
+        return
     folder = _db_folder()
-    if not os.path.isdir(folder):
-        logger.warning("db folder not found: %s; skipping schema sync", folder)
+    clickhouse_folder = os.path.join(folder, "clickhouse")
+    if not os.path.isdir(clickhouse_folder):
+        logger.warning("db/clickhouse folder not found: %s; skipping schema sync", clickhouse_folder)
         return
     _ensure_database()
     try:
@@ -281,14 +389,14 @@ def ensure_schema() -> None:
         logger.warning("Could not connect to ClickHouse for schema sync: %s", e)
         return
     for name in SCHEMA_FILES:
-        path = os.path.join(folder, name)
+        path = os.path.join(clickhouse_folder, name)
         logger.info("Applying schema: %s", name)
         if name == "02_schema_accounts.sql":
             _ensure_accounts_columns(client)
         _run_sql_file(client, path)
     _ensure_audit_trail_columns(client)
     if _table_exists(client, "users") and not _has_any_users(client):
-        path = os.path.join(folder, SEED_FILE)
+        path = os.path.join(clickhouse_folder, SEED_FILE)
         logger.info("Applying seed (no users): %s", SEED_FILE)
         _run_sql_file(client, path)
     elif not _table_exists(client, "users"):

@@ -144,7 +144,7 @@ def create_owner_account(body: CreateOwnerAccountRequest):
 
         # 5. Create master organization (site where SD-WAN agents will attach).
         # Master-Organization has no parent group: group_id = nil.
-        q_org = f"""INSERT INTO {CLICKHOUSE_DATABASE}.organizations (id, account_id, group_id, name, group_name, tunnel_key_exchange, is_default, master_owner_user_id, created_by_user_id) VALUES"""
+        q_org = f"""INSERT INTO {CLICKHOUSE_DATABASE}.sites (id, account_id, group_id, name, group_name, tunnel_key_exchange, is_default, master_owner_user_id, created_by_user_id) VALUES"""
         execute_many(
             q_org,
             [

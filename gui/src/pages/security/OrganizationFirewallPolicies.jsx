@@ -193,6 +193,10 @@ function NewRuleForm({ theme: t, s, onSubmit, onCancel }) {
 }
 
 function RulesTable({ title, rows, allRows, setRows, theme: t, s, viewMode, addPanelExpanded, onToggleAddPanel, addPanelContent, navigate }) {
+  const [sortKey, setSortKey] = useState('name');
+  const [sortDir, setSortDir] = useState('asc');
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
   const move = (id, dir) => {
     const list = allRows ?? rows;
     const i = list.findIndex((r) => r.id === id);
@@ -212,7 +216,15 @@ function RulesTable({ title, rows, allRows, setRows, theme: t, s, viewMode, addP
     if (window.confirm('Delete this rule?')) setRows((prev) => prev.filter((r) => r.id !== id));
   };
 
-  const gridCols = '1fr 1fr 100px 100px 1fr 140px';
+  const sortedRows = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      const va = String(a[sortKey] ?? ''); const vb = String(b[sortKey] ?? '');
+      return (va < vb ? -1 : va > vb ? 1 : 0) * dir;
+    });
+  }, [rows, sortKey, sortDir]);
+
+  const gridCols = '32px 1fr 1fr 100px 100px 1fr 140px';
 
   return (
     <div style={{ marginBottom: 32 }}>
@@ -241,20 +253,35 @@ function RulesTable({ title, rows, allRows, setRows, theme: t, s, viewMode, addP
       {addPanelExpanded && addPanelContent}
       {viewMode === 'grid' ? (
         <>
+          {selectedIds.size > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <button type="button" style={{ ...s.btn, ...s.btnDanger }} onClick={() => {
+                if (!window.confirm(`Delete ${selectedIds.size} selected rule(s)?`)) return;
+                setRows((prev) => prev.filter((r) => !selectedIds.has(String(r.id))));
+                setSelectedIds(new Set());
+              }}>
+                Delete selected ({selectedIds.size})
+              </button>
+            </div>
+          )}
           <div style={{ ...s.grid(gridCols), ...s.gridHeader }}>
-            <span>Name</span>
-            <span>Destination</span>
-            <span>Source</span>
-            <span>Action</span>
-            <span>Description</span>
+            <span style={{ display: 'flex', alignItems: 'center' }}>
+              <input type="checkbox" checked={sortedRows.length > 0 && sortedRows.every((r) => selectedIds.has(String(r.id)))} onChange={(e) => setSelectedIds(e.target.checked ? new Set(sortedRows.map((r) => String(r.id))) : new Set())} style={{ margin: 0 }} />
+            </span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('name'); setSortDir((d) => (sortKey === 'name' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Name {sortKey === 'name' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('destination'); setSortDir((d) => (sortKey === 'destination' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Destination {sortKey === 'destination' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('source'); setSortDir((d) => (sortKey === 'source' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Source {sortKey === 'source' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('action'); setSortDir((d) => (sortKey === 'action' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Action {sortKey === 'action' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('description'); setSortDir((d) => (sortKey === 'description' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Description {sortKey === 'description' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
             <span>Rule Actions</span>
           </div>
-          {rows.map((r, index) => {
+          {sortedRows.map((r, index) => {
             const fullIndex = (allRows ?? rows).findIndex((x) => x.id === r.id);
             const canMoveUp = fullIndex > 0;
             const canMoveDown = fullIndex >= 0 && fullIndex < (allRows ?? rows).length - 1;
             return (
               <div key={r.id} style={s.grid(gridCols)}>
+                <span style={{ display: 'flex', alignItems: 'center' }}><input type="checkbox" checked={selectedIds.has(String(r.id))} onChange={() => setSelectedIds((prev) => { const next = new Set(prev); if (next.has(String(r.id))) next.delete(String(r.id)); else next.add(String(r.id)); return next; })} style={{ margin: 0 }} /></span>
                 <span>{r.name}</span>
                 <span>{r.destination}</span>
                 <span>{r.source}</span>

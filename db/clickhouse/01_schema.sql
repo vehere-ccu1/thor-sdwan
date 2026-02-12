@@ -1,6 +1,5 @@
 -- Thor SD-WAN CMS - ClickHouse schema
--- Run with: clickhouse-client --multiquery < db/01_schema.sql
--- Or: cat db/01_schema.sql | clickhouse-client --multiquery
+-- Run with: clickhouse-client --multiquery < db/clickhouse/01_schema.sql
 
 -- Database (use default or create dedicated)
 CREATE DATABASE IF NOT EXISTS sdwan_cms;

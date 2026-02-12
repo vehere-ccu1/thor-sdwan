@@ -1,0 +1,42 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0
+  },
+  "mappings": {
+    "properties": {
+      "id": { "type": "keyword" },
+      "email": { "type": "keyword" },
+      "name": { "type": "text" },
+      "password_hash": { "type": "keyword" },
+      "role_id": { "type": "keyword" },
+      "entity_id": { "type": "keyword" },
+      "enabled": { "type": "byte" },
+      "created_at": { "type": "date" },
+      "updated_at": { "type": "date" },
+      "job_title": { "type": "keyword" },
+      "account_id": { "type": "keyword" },
+      "is_owner": { "type": "byte" },
+      "ts": { "type": "date" },
+      "user_id": { "type": "keyword" },
+      "user_email": { "type": "keyword" },
+      "action": { "type": "keyword" },
+      "resource": { "type": "keyword" },
+      "resource_id": { "type": "keyword" },
+      "details": { "type": "text" },
+      "ip": { "type": "keyword" },
+      "user_agent": { "type": "text" },
+      "account_id": { "type": "keyword" },
+      "organization_id": { "type": "keyword" },
+      "billing_email": { "type": "keyword" },
+      "master_organization_name": { "type": "keyword" },
+      "token_secret": { "type": "keyword" },
+      "revoked": { "type": "byte" },
+      "label": { "type": "keyword" },
+      "permission_to": { "type": "keyword" },
+      "entity_name": { "type": "keyword" },
+      "role": { "type": "keyword" },
+      "deleted": { "type": "byte" }
+    }
+  }
+}

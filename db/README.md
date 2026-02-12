@@ -1,6 +1,8 @@
-# Thor SD-WAN CMS – ClickHouse schema
+# Thor SD-WAN CMS – Database schema and scripts
 
-This folder contains the ClickHouse DDL to create all tables and views for local configuration storage:
+Schema and scripts per DB type: **db/clickhouse/**, **db/mysql/**, **db/elasticsearch/**, **db/mongodb/**, **db/oracle/**. See each folder's README. API schema_sync runs the matching folder on startup from config `db_type`.
+
+**Note:** These scripts (and `api/schema_sync.py`) are written for ClickHouse. They will **not** run on MySQL, Elasticsearch, MongoDB, or Oracle. The API’s DB wrapper supports testing connectivity to those databases (config dialog), but application data and schema are currently stored only in ClickHouse. To use another DB for storage you would need separate schema definitions per database.
 
 - **User Management / User roles** – `roles`, `users`, `users_with_roles` view  
 - **Audit Trail** – `audit_trail` (append-only), `audit_recent` view  
@@ -45,17 +47,17 @@ curl https://clickhouse.com/ | sh
 sudo ./clickhouse install
 ```
 
-## Create database and objects
+## Create database and objects (ClickHouse)
 
-From the project root, run in order:
+From the project root, run in order (schema files live under `db/clickhouse/`):
 
 ```bash
-clickhouse-client --multiquery < db/01_schema.sql
-clickhouse-client --multiquery < db/02_schema_accounts.sql
-clickhouse-client --multiquery < db/03_schema_roles_permissions.sql
-clickhouse-client --multiquery < db/04_schema_tokens.sql
-clickhouse-client --multiquery < db/05_seed_admin.sql
-clickhouse-client --multiquery < db/06_schema_audit_trail.sql
+clickhouse-client --multiquery < db/clickhouse/01_schema.sql
+clickhouse-client --multiquery < db/clickhouse/02_schema_accounts.sql
+clickhouse-client --multiquery < db/clickhouse/03_schema_roles_permissions.sql
+clickhouse-client --multiquery < db/clickhouse/04_schema_tokens.sql
+clickhouse-client --multiquery < db/clickhouse/05_seed_admin.sql
+clickhouse-client --multiquery < db/clickhouse/06_schema_audit_trail.sql
 ```
 
 `06_schema_audit_trail.sql` adds `account_id` and `organization_id` to **audit_trail** and sets TTL so records are removed automatically after the retention period (aligned with `audit_log_retention_in_days` in API config). No manual delete of audit records; deletion is by TTL only.
@@ -63,8 +65,8 @@ clickhouse-client --multiquery < db/06_schema_audit_trail.sql
 Or with explicit host/port:
 
 ```bash
-clickhouse-client --host localhost --port 9000 --multiquery < db/01_schema.sql
-clickhouse-client --host localhost --port 9000 --multiquery < db/02_schema_accounts.sql
+clickhouse-client --host localhost --port 9000 --multiquery < db/clickhouse/01_schema.sql
+clickhouse-client --host localhost --port 9000 --multiquery < db/clickhouse/02_schema_accounts.sql
 ```
 
 `02_schema_accounts.sql` adds **Account** (billing entity) and **Group** tables, and links **organizations** and **users** to accounts and groups.

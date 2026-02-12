@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 import { getDataPageStyles } from '../../styles/dataPageStyles';
@@ -9,9 +9,10 @@ import { fetchAccounts, updateAccount, deleteAccount } from '../../api/client';
 export default function Profile({ onLogout }) {
   const { theme: t } = useTheme();
   const dataPageStyles = getDataPageStyles(t);
+  const gridTemplate = '32px minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) minmax(100px,1.2fr) minmax(80px,1fr) 80px 120px';
   const styles = {
     ...dataPageStyles,
-    grid: dataPageStyles.grid('minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) minmax(100px,1.2fr) minmax(80px,1fr) 80px 120px'),
+    grid: dataPageStyles.grid(gridTemplate),
     flag: { fontSize: '1.5rem' },
   };
   const cellClip = { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
@@ -114,6 +115,9 @@ export default function Profile({ onLogout }) {
     country: '',
     notifications: false,
   });
+  const [sortKey, setSortKey] = useState('name');
+  const [sortDir, setSortDir] = useState('asc');
+  const [selectedIds, setSelectedIds] = useState(new Set());
 
   const resetForm = () => {
     setForm({ name: '', owner_name: '', owner_job_title: '', billing_email: '', country: '', notifications: false });
@@ -185,6 +189,20 @@ export default function Profile({ onLogout }) {
   };
 
   const countryName = (code) => countries.find((c) => c.code === code)?.name || code || '—';
+
+  const sortedRecords = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...records].sort((a, b) => {
+      let va, vb;
+      if (sortKey === 'name') { va = (a.name || ''); vb = (b.name || ''); }
+      else if (sortKey === 'owner_name') { va = (a.owner_name || ''); vb = (b.owner_name || ''); }
+      else if (sortKey === 'owner_job_title') { va = (a.owner_job_title || ''); vb = (b.owner_job_title || ''); }
+      else if (sortKey === 'billing_email') { va = (a.billing_email || ''); vb = (b.billing_email || ''); }
+      else if (sortKey === 'country') { va = countryName(a.country); vb = countryName(b.country); }
+      else { va = (a.notifications ? 'Yes' : 'No'); vb = (b.notifications ? 'Yes' : 'No'); }
+      return (va < vb ? -1 : va > vb ? 1 : 0) * dir;
+    });
+  }, [records, sortKey, sortDir]);
 
   return (
     <div style={styles.page}>
@@ -297,17 +315,42 @@ export default function Profile({ onLogout }) {
         <p style={styles.empty}>No accounts available.</p>
       ) : viewMode === 'grid' ? (
         <>
+          {selectedIds.size > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <button type="button" style={{ ...styles.btn, ...styles.btnDanger }} onClick={async () => {
+                const toDelete = [...selectedIds];
+                if (!window.confirm(`Delete ${toDelete.length} selected account(s)? This will remove all users in those accounts.`)) return;
+                for (const id of toDelete) {
+                  const res = await deleteAccount(id);
+                  if (res && res.deleted) {
+                    if (String(id) === String(currentAccountId)) {
+                      onLogout?.();
+                      navigate('/login', { replace: true });
+                      return;
+                    }
+                    setRecords((prev) => prev.filter((r) => String(r.id) !== id));
+                  }
+                }
+                fetchAccounts().then((list) => setRecords(Array.isArray(list) ? list : []));
+                setSelectedIds(new Set());
+              }}>
+                Delete selected ({selectedIds.size})
+              </button>
+            </div>
+          )}
           <div style={{ ...styles.grid, ...styles.gridHeader }}>
-            <span>Organization / Account name</span>
-            <span>Owner Name</span>
-            <span>Owner Job Title</span>
-            <span>Owner Email ID</span>
-            <span>Country</span>
-            <span>Notifications</span>
+            <span style={{ display: 'flex', alignItems: 'center' }}><input type="checkbox" checked={sortedRecords.length > 0 && sortedRecords.every((r) => selectedIds.has(String(r.id)))} onChange={(e) => setSelectedIds(e.target.checked ? new Set(sortedRecords.map((r) => String(r.id))) : new Set())} style={{ margin: 0 }} /></span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('name'); setSortDir((d) => (sortKey === 'name' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Organization / Account name {sortKey === 'name' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('owner_name'); setSortDir((d) => (sortKey === 'owner_name' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Owner Name {sortKey === 'owner_name' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('owner_job_title'); setSortDir((d) => (sortKey === 'owner_job_title' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Owner Job Title {sortKey === 'owner_job_title' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('billing_email'); setSortDir((d) => (sortKey === 'billing_email' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Owner Email ID {sortKey === 'billing_email' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('country'); setSortDir((d) => (sortKey === 'country' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Country {sortKey === 'country' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+            <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKey('notifications'); setSortDir((d) => (sortKey === 'notifications' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Notifications {sortKey === 'notifications' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
             <span>Actions</span>
           </div>
-          {records.map((r) => (
+          {sortedRecords.map((r) => (
             <div key={r.id} style={styles.grid}>
+              <span style={{ display: 'flex', alignItems: 'center' }}><input type="checkbox" checked={selectedIds.has(String(r.id))} onChange={() => setSelectedIds((prev) => { const next = new Set(prev); if (next.has(String(r.id))) next.delete(String(r.id)); else next.add(String(r.id)); return next; })} style={{ margin: 0 }} /></span>
               <span style={cellClip} title={r.name || ''}>{r.name || '—'}</span>
               <span style={cellClip} title={r.owner_name || ''}>{r.owner_name || '—'}</span>
               <span style={cellClip} title={r.owner_job_title || ''}>{r.owner_job_title || '—'}</span>

@@ -90,7 +90,7 @@ export default function Configuration() {
       <div style={s.header}>
         <h1 style={s.title}>Configuration</h1>
         <p style={{ margin: 0, fontSize: t.fontSize.sm, color: t.color.textMuted }}>
-          Edit api/resource/config.json. API host, port, and prefix take effect after restart.
+          Edit the API server config file (e.g. config on the machine where the API runs). API host, port, and prefix take effect after restart.
         </p>
       </div>
 
