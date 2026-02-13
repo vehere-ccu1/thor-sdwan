@@ -194,3 +194,23 @@ export function IconLink({ size = 20, ...props }) {
     </svg>
   );
 }
+
+/** Export / download icon */
+export function IconExport({ size = 20, ...props }) {
+  const iconStyle = useIconStyle();
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...props} style={iconStyle}>
+      <path fill="currentColor" d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
+    </svg>
+  );
+}
+
+/** Import / upload icon */
+export function IconImport({ size = 20, ...props }) {
+  const iconStyle = useIconStyle();
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...props} style={iconStyle}>
+      <path fill="currentColor" d="M9 16h6v-6h4l-7-7-7 7h4v6zM5 18v2h14v-2H5z" />
+    </svg>
+  );
+}

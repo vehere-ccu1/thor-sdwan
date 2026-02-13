@@ -11,7 +11,7 @@ import os
 import re
 import time
 
-from config import CLICKHOUSE_DATABASE, DB_TYPE, DB_HOST, DB_NAME, DB_PASSWORD, DB_PORT, DB_USER
+from config import CLICKHOUSE_DATABASE, DB_TYPE, DB_HOST, DB_NAME, DB_PASSWORD, DB_PORT, DB_SCHEME, DB_USER, DB_VERIFY_SSL
 from db import get_client, get_client_default_db
 
 logger = logging.getLogger(__name__)
@@ -310,10 +310,40 @@ def _ensure_schema_mysql() -> None:
                     cur.execute(stmt)
             except Exception as e:
                 logger.warning("MySQL schema statement failed: %s", e)
+        _seed_mysql_if_empty(conn)
         conn.close()
         logger.info("MySQL schema sync completed")
     except Exception as e:
         logger.warning("MySQL schema sync failed: %s", e)
+
+
+def _seed_mysql_if_empty(conn) -> None:
+    """If no users exist, insert default roles and admin user (same as ClickHouse 05_seed_admin)."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM users LIMIT 1")
+            if cur.fetchone():
+                return
+        # Insert roles and default admin (password SHA256 hex of 'admin')
+        import hashlib
+        pw_hash = hashlib.sha256(b"admin").hexdigest()
+        seed_sqls = [
+            "INSERT IGNORE INTO accounts (id, name, billing_email) VALUES ('11111111-1111-1111-1111-111111111111', 'Default', 'admin@local')",
+            "INSERT IGNORE INTO roles (id, name, description, permissions) VALUES ('22222222-2222-2222-2222-222222222222', 'Owner', 'Account owner', '[\"*\"]')",
+            "INSERT IGNORE INTO roles (id, name, description, permissions) VALUES ('44444444-4444-4444-4444-444444444444', 'Manager', 'Manager', '[\"users:read\",\"devices:read\",\"devices:write\"]')",
+            "INSERT IGNORE INTO roles (id, name, description, permissions) VALUES ('55555555-5555-5555-5555-555555555555', 'Viewer', 'Viewer', '[\"users:read\",\"devices:read\"]')",
+            f"INSERT IGNORE INTO users (id, account_id, email, name, password_hash, role_id, is_owner, enabled) VALUES ('33333333-3333-3333-3333-333333333333', '11111111-1111-1111-1111-111111111111', 'admin', 'admin', '{pw_hash}', '22222222-2222-2222-2222-222222222222', 1, 1)",
+        ]
+        for sql in seed_sqls:
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(sql)
+            except Exception as e:
+                logger.warning("MySQL seed statement failed: %s", e)
+        conn.commit()
+        logger.info("MySQL seed (roles + admin user) applied")
+    except Exception as e:
+        logger.warning("MySQL seed check failed: %s", e)
 
 
 def _ensure_schema_mongodb() -> None:
@@ -334,30 +364,57 @@ def _ensure_schema_mongodb() -> None:
     except ImportError:
         logger.warning("pymongo not installed; skipping MongoDB schema sync")
     except Exception as e:
-        logger.warning("MongoDB schema sync failed: %s", e)
+        err_msg = str(e).lower()
+        if "password" in err_msg or "auth" in err_msg or "authentication" in err_msg:
+            logger.warning(
+                "MongoDB schema sync failed: %s. Set db_user and db_password in api/resource/config.json for your MongoDB user.",
+                e,
+            )
+        else:
+            logger.warning("MongoDB schema sync failed: %s", e)
+
+
+# Elasticsearch backend uses one index per collection: {DB_NAME}_users, _accounts, etc.
+_ES_COLLECTIONS = ("users", "accounts", "sites", "groups", "organization_tokens", "user_permissions", "audit_trail")
 
 
 def _ensure_schema_elasticsearch() -> None:
-    """Create Elasticsearch index from db/elasticsearch/index_mapping.json. Requires elasticsearch."""
+    """Create Elasticsearch indices for all collections used by db_elasticsearch."""
     try:
         from elasticsearch import Elasticsearch
         folder = _db_folder()
         mapping_path = os.path.join(folder, "elasticsearch", "index_mapping.json")
-        es = Elasticsearch([{"host": DB_HOST, "port": DB_PORT}], request_timeout=10)
-        index = (DB_NAME or "sdwan_cms").lower().replace(" ", "_")
-        if not es.indices.exists(index=index):
-            if os.path.isfile(mapping_path):
-                import json
-                with open(mapping_path, encoding="utf-8") as f:
-                    body = json.load(f)
-                es.indices.create(index=index, body=body)
-            else:
-                es.indices.create(index=index, body={"mappings": {"properties": {"id": {"type": "keyword"}, "email": {"type": "keyword"}, "ts": {"type": "date"}}}})
+        scheme = (DB_SCHEME or "http").strip().lower() or "http"
+        url = f"{scheme}://{DB_HOST}:{DB_PORT}"
+        # 7.x API: hosts list, http_auth, verify_certs (plain application/json, no 406)
+        kwargs = {"verify_certs": DB_VERIFY_SSL, "timeout": 10}
+        if DB_USER or DB_PASSWORD:
+            kwargs["http_auth"] = (DB_USER or "", DB_PASSWORD or "")
+        es = Elasticsearch([url], **kwargs)
+        prefix = (DB_NAME or "sdwan_cms").lower().replace(" ", "_")
+        default_mapping = {"mappings": {"properties": {"id": {"type": "keyword"}, "email": {"type": "keyword"}, "ts": {"type": "date"}}}}
+        if os.path.isfile(mapping_path):
+            import json
+            with open(mapping_path, encoding="utf-8") as f:
+                default_mapping = json.load(f)
+        for coll in _ES_COLLECTIONS:
+            index = f"{prefix}_{coll}"
+            try:
+                if not es.indices.exists(index=index):
+                    es.indices.create(index=index, body=default_mapping)
+            except Exception as sub_e:
+                logger.warning("Elasticsearch create index %s: %s", index, sub_e)
         logger.info("Elasticsearch schema sync completed")
     except ImportError:
         logger.warning("elasticsearch not installed; skipping Elasticsearch schema sync")
     except Exception as e:
-        logger.warning("Elasticsearch schema sync failed: %s", e)
+        scheme = (DB_SCHEME or "http").strip().lower() or "http"
+        url_hint = f"{scheme}://{DB_HOST}:{DB_PORT}"
+        logger.warning(
+            "Elasticsearch schema sync failed: %s. Check Elasticsearch is running and reachable at %s. "
+            "If your cluster uses HTTPS, set \"db_scheme\": \"https\" in api/resource/config.json.",
+            e, url_hint,
+        )
 
 
 def ensure_schema() -> None:

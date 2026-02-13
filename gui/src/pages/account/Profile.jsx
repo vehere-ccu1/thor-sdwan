@@ -6,6 +6,75 @@ import { countries, getFlagEmoji } from '../../data/countries';
 import { IconEdit, IconGrid, IconTicket, IconTrash } from '../../components/Icons';
 import { fetchAccounts, updateAccount, deleteAccount } from '../../api/client';
 
+function RightSlidePanel({ theme: t, onClose, title, headerStyle, titleStyle, children }) {
+  const [slideOpen, setSlideOpen] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setSlideOpen(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  const panelWidth = 420;
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, pointerEvents: 'auto' }}>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onClose}
+        onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'rgba(0,0,0,0.35)',
+          opacity: slideOpen ? 1 : 0,
+          transition: 'opacity 0.2s ease',
+        }}
+        aria-label="Close"
+      />
+      <div
+        style={{
+          position: 'absolute',
+          right: 0,
+          top: 0,
+          bottom: 0,
+          width: panelWidth,
+          maxWidth: '90vw',
+          background: t.color.surface,
+          boxShadow: '-4px 0 24px rgba(0,0,0,0.18)',
+          transform: slideOpen ? 'translateX(0)' : 'translateX(100%)',
+          transition: 'transform 0.25s ease',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ ...headerStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <h2 style={titleStyle}>{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'inherit',
+              cursor: 'pointer',
+              padding: 4,
+              fontSize: 20,
+              lineHeight: 1,
+              opacity: 0.9,
+            }}
+          >
+            ×
+          </button>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Profile({ onLogout }) {
   const { theme: t } = useTheme();
   const dataPageStyles = getDataPageStyles(t);
@@ -221,94 +290,95 @@ export default function Profile({ onLogout }) {
       </div>
 
       {editingId && (
-        <div style={{ marginBottom: 24 }}>
-          <div style={editCard.card}>
-            <div style={editCard.header}>
-              <h2 style={editCard.title}>Edit account</h2>
-            </div>
-            <div style={editCard.formContainer}>
-              <form
-                style={editCard.form}
-                onSubmit={(e) => { e.preventDefault(); if (editingId) handleUpdate(); }}
-              >
-                <div style={editCard.field}>
+        <RightSlidePanel
+          theme={t}
+          onClose={resetForm}
+          title="Edit account"
+          headerStyle={editCard.header}
+          titleStyle={editCard.title}
+        >
+          <div style={editCard.formContainer}>
+            <form
+              style={editCard.form}
+              onSubmit={(e) => { e.preventDefault(); if (editingId) handleUpdate(); }}
+            >
+              <div style={editCard.field}>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  style={editCard.input}
+                  disabled
+                  placeholder="Organization or account name"
+                />
+              </div>
+              <div style={editCard.field}>
+                <input
+                  type="text"
+                  value={form.owner_name}
+                  onChange={(e) => setForm((f) => ({ ...f, owner_name: e.target.value }))}
+                  style={editCard.input}
+                  placeholder="Owner name"
+                />
+              </div>
+              <div style={editCard.field}>
+                <input
+                  type="text"
+                  value={form.owner_job_title}
+                  onChange={(e) => setForm((f) => ({ ...f, owner_job_title: e.target.value }))}
+                  style={editCard.input}
+                  placeholder="Owner job title"
+                />
+              </div>
+              <div style={editCard.field}>
+                <input
+                  type="email"
+                  value={form.billing_email}
+                  onChange={(e) => setForm((f) => ({ ...f, billing_email: e.target.value }))}
+                  style={editCard.input}
+                  disabled
+                  placeholder="Owner email ID"
+                />
+              </div>
+              <div style={editCard.field}>
+                <select
+                  value={form.country}
+                  onChange={(e) => setForm((f) => ({ ...f, country: e.target.value }))}
+                  style={editCard.select}
+                >
+                  <option value="">— Select country —</option>
+                  <option value="IN">{getFlagEmoji('IN')} India</option>
+                  {countries
+                    .filter((c) => c.code !== 'IN')
+                    .map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {getFlagEmoji(c.code)} {c.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div style={editCard.field}>
+                <label style={{ ...editCard.label, ...editCard.checkboxRow, marginBottom: 0 }}>
                   <input
-                    type="text"
-                    value={form.name}
-                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                    style={editCard.input}
-                    disabled
-                    placeholder="Organization or account name"
+                    type="checkbox"
+                    checked={form.notifications}
+                    onChange={(e) => setForm((f) => ({ ...f, notifications: e.target.checked }))}
+                    style={{ margin: 0, accentColor: t.iconColor }}
                   />
-                </div>
-                <div style={editCard.field}>
-                  <input
-                    type="text"
-                    value={form.owner_name}
-                    onChange={(e) => setForm((f) => ({ ...f, owner_name: e.target.value }))}
-                    style={editCard.input}
-                    placeholder="Owner name"
-                  />
-                </div>
-                <div style={editCard.field}>
-                  <input
-                    type="text"
-                    value={form.owner_job_title}
-                    onChange={(e) => setForm((f) => ({ ...f, owner_job_title: e.target.value }))}
-                    style={editCard.input}
-                    placeholder="Owner job title"
-                  />
-                </div>
-                <div style={editCard.field}>
-                  <input
-                    type="email"
-                    value={form.billing_email}
-                    onChange={(e) => setForm((f) => ({ ...f, billing_email: e.target.value }))}
-                    style={editCard.input}
-                    disabled
-                    placeholder="Owner email ID"
-                  />
-                </div>
-                <div style={editCard.field}>
-                  <select
-                    value={form.country}
-                    onChange={(e) => setForm((f) => ({ ...f, country: e.target.value }))}
-                    style={editCard.select}
-                  >
-                    <option value="">— Select country —</option>
-                    <option value="IN">{getFlagEmoji('IN')} India</option>
-                    {countries
-                      .filter((c) => c.code !== 'IN')
-                      .map((c) => (
-                        <option key={c.code} value={c.code}>
-                          {getFlagEmoji(c.code)} {c.name}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-                <div style={editCard.field}>
-                  <label style={{ ...editCard.label, ...editCard.checkboxRow, marginBottom: 0 }}>
-                    <input
-                      type="checkbox"
-                      checked={form.notifications}
-                      onChange={(e) => setForm((f) => ({ ...f, notifications: e.target.checked }))}
-                      style={{ margin: 0, accentColor: t.iconColor }}
-                    />
-                    Notifications
-                  </label>
-                </div>
-                <div style={editCard.buttonRow}>
-                  <button type="submit" style={editCard.btnPrimary}>
-                    Update
-                  </button>
-                  <button type="button" style={editCard.btnSecondary} onClick={resetForm}>
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </div>
+                  Notifications
+                </label>
+              </div>
+              <div style={editCard.buttonRow}>
+                <button type="submit" style={editCard.btnPrimary}>
+                  Update
+                </button>
+                <button type="button" style={editCard.btnSecondary} onClick={resetForm}>
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
-        </div>
+        </RightSlidePanel>
       )}
 
       {records.length === 0 ? (

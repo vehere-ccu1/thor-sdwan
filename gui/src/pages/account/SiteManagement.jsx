@@ -1,8 +1,7 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import { getDataPageStyles } from '../../styles/dataPageStyles';
-import { IconEdit, IconTrash, IconKey, IconGrid, IconTicket, IconLink, IconPlus, IconMinus } from '../../components/Icons';
+import { IconGrid, IconTicket, IconLink, IconPlus, IconMinus, IconExport, IconImport } from '../../components/Icons';
 import {
   fetchGroups,
   fetchSites,
@@ -14,6 +13,8 @@ import {
   updateSite,
   deleteSite,
 } from '../../api/client';
+import SiteManagementGroups from './SiteManagementGroups';
+import SiteManagementSites from './SiteManagementSites';
 
 function nextId() {
   return String(Date.now());
@@ -71,7 +72,6 @@ function RightSlidePanel({ theme: t, onClose, title, headerStyle, titleStyle, ch
 }
 
 export default function SiteManagement() {
-  const navigate = useNavigate();
   const [currentAccountId, setCurrentAccountId] = useState('');
   const [groups, setGroups] = useState([]);
   const [users, setUsers] = useState([]);
@@ -97,20 +97,19 @@ export default function SiteManagement() {
   const [bulkAddText, setBulkAddText] = useState('');
   const [bulkAddBusy, setBulkAddBusy] = useState(false);
   const [bulkAddResult, setBulkAddResult] = useState({ created: 0, failed: 0, errors: [] });
-  const [graphZoomGroup, setGraphZoomGroup] = useState(1);
-  const [graphZoomSite, setGraphZoomSite] = useState(1);
   const [sortKeyGroup, setSortKeyGroup] = useState('name');
   const [sortDirGroup, setSortDirGroup] = useState('asc');
   const [sortKeySite, setSortKeySite] = useState('name');
   const [sortDirSite, setSortDirSite] = useState('asc');
   const [selectedGroupIds, setSelectedGroupIds] = useState(new Set());
   const [selectedSiteIds, setSelectedSiteIds] = useState(new Set());
-  const [panningGroup, setPanningGroup] = useState(false);
-  const [panningSite, setPanningSite] = useState(false);
-  const panStartGroupRef = useRef(null);
-  const panStartSiteRef = useRef(null);
-  const hasCenteredGroupRef = useRef(false);
-  const hasCenteredSiteRef = useRef(false);
+  const [importPanelOpen, setImportPanelOpen] = useState(false);
+  const [importCsvHeaders, setImportCsvHeaders] = useState([]);
+  const [importCsvRows, setImportCsvRows] = useState([]);
+  const [importMapping, setImportMapping] = useState({});
+  const [importDuplicates, setImportDuplicates] = useState([]);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importResult, setImportResult] = useState({ created: 0, skipped: 0, failed: 0, errors: [] });
 
   const resetForm = () => {
     setForm({
@@ -286,14 +285,8 @@ export default function SiteManagement() {
     }
   };
 
-  // Site groups grid: checkbox, Name, Parent group, Created by, Created on, Action
-  const gridColsGroups = '32px minmax(0,1.5fr) minmax(0,1.5fr) minmax(100px,1fr) minmax(120px,1fr) 120px';
-  // Sites grid: checkbox, Site Name, Site Group, Master Owner, Created by, Created on, Action
-  const gridCols = '32px minmax(0,1.2fr) minmax(0,1.2fr) minmax(0,1fr) minmax(100px,1fr) minmax(120px,1fr) 120px';
   const { theme: t } = useTheme();
-  const expandIconStroke = '#166534';
   const s = getDataPageStyles(t);
-  const groupName = (id) => groups.find((g) => g.id === id)?.name || id || '—';
   const masterOrgName = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('sdwan_cms_master_org_name') : null) || '—';
   /** Build hierarchical label: "MasterOrgName - ParentSiteGroup - ChildSiteGroup" from root to this group.
    *  When there is no group/parent, we show the account master-organization name from Profile.
@@ -324,457 +317,46 @@ export default function SiteManagement() {
   const defaultGroupId = groups.find((g) => (g.name || '').trim() === masterOrgName)?.id
     || groups.find((g) => !g.parent_group_id || String(g.parent_group_id) === '00000000-0000-0000-0000-000000000000')?.id
     || '';
-
-  // --- Group tab graph: tree with Master-Organization as single root (parent → child links)
   const MASTER_ORG_ROOT_ID = '__master_org_root__';
-  const graphDataGroup = useMemo(() => {
-    const nodes = [
-      { id: MASTER_ORG_ROOT_ID, name: 'Master-Organization', nodeType: 'master-org' },
-      ...groups.map((g) => ({
-        id: String(g.id),
-        name: g.name || g.id,
-        nodeType: hasNoGroup(g.parent_group_id) ? 'master-org' : 'other-group',
-      })),
-    ];
-    const links = [];
-    groups.forEach((g) => {
-      const gid = String(g.id);
-      if (hasNoGroup(g.parent_group_id)) {
-        links.push({ source: MASTER_ORG_ROOT_ID, target: gid });
-      } else {
-        links.push({ source: String(g.parent_group_id), target: gid });
-      }
-    });
-    return { nodes, links };
-  }, [groups]);
 
-  const { levelMapGroup, childrenMapGroup, parentMapGroup } = useMemo(() => {
-    const { nodes, links } = graphDataGroup;
-    const targets = new Set(links.map((l) => l.target));
-    const roots = nodes.filter((n) => !targets.has(n.id));
-    const level = new Map();
-    roots.forEach((n) => level.set(n.id, 0));
-    let frontier = roots.map((n) => n.id);
-    while (frontier.length) {
-      const next = [];
-      frontier.forEach((src) => {
-        links.filter((l) => l.source === src).forEach((l) => {
-          if (!level.has(l.target)) {
-            level.set(l.target, (level.get(src) ?? 0) + 1);
-            next.push(l.target);
-          }
-        });
-      });
-      frontier = next;
-    }
-    nodes.forEach((n) => { if (!level.has(n.id)) level.set(n.id, 0); });
-    const children = new Map();
-    const parent = new Map();
-    links.forEach((l) => {
-      if (!children.has(l.source)) children.set(l.source, []);
-      children.get(l.source).push(l.target);
-      parent.set(l.target, l.source);
-    });
-    return { levelMapGroup: level, childrenMapGroup: children, parentMapGroup: parent };
-  }, [graphDataGroup]);
-
-  const [expandedNodesGroup, setExpandedNodesGroup] = useState(() => new Set());
-  const [collapsedNodesGroup, setCollapsedNodesGroup] = useState(() => new Set());
-
-  const isExpandedGroup = (id) => {
-    const level = levelMapGroup.get(id) ?? 0;
-    if (collapsedNodesGroup.has(id)) return false;
-    if (level <= 1) return true;
-    return expandedNodesGroup.has(id);
+  const getGroupIdByPathLabel = (label) => {
+    const L = (label || '').trim();
+    const byPath = groups.find((g) => getGroupPathLabel(g.id) === L);
+    if (byPath) return byPath.id;
+    const byName = groups.find((g) => hasNoGroup(g.parent_group_id) && (g.name || '').trim() === L);
+    return byName ? byName.id : '';
   };
 
-  const visibleIdsGroup = useMemo(() => {
-    const visible = new Set();
-    const parentExpanded = (pid) => {
-      const l = levelMapGroup.get(pid) ?? 0;
-      if (collapsedNodesGroup.has(pid)) return false;
-      return l <= 1 || expandedNodesGroup.has(pid);
-    };
-    const isVisible = (id) => {
-      if (visible.has(id)) return true;
-      const p = parentMapGroup.get(id);
-      if (!p) {
-        visible.add(id);
-        return true;
-      }
-      if (!parentExpanded(p)) return false;
-      if (!isVisible(p)) return false;
-      visible.add(id);
-      return true;
-    };
-    graphDataGroup.nodes.forEach((n) => isVisible(n.id));
-    return visible;
-  }, [graphDataGroup, levelMapGroup, parentMapGroup, expandedNodesGroup, collapsedNodesGroup]);
-
-  const graphContainerGroupRef = useRef(null);
-  const [graphSizeGroup, setGraphSizeGroup] = useState({ width: 800, height: 400 });
-  useEffect(() => {
-    const el = graphContainerGroupRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      const rect = entries[0]?.contentRect;
-      if (rect && typeof rect.width === 'number' && typeof rect.height === 'number') {
-        setGraphSizeGroup({ width: Math.max(rect.width, 400), height: Math.max(rect.height, 300) });
-      }
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [activeTab, viewModeGroup]);
-  useEffect(() => {
-    const el = graphContainerGroupRef.current;
-    if (!el) return;
-    const onWheel = (e) => {
-      const delta = -e.deltaY * 0.002;
-      e.preventDefault();
-      setGraphZoomGroup((z) => {
-        const next = z + delta;
-        if ((next < 0.5 && delta < 0) || (next > 2 && delta > 0)) return z;
-        return Math.min(2, Math.max(0.5, next));
-      });
-    };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
-  }, [activeTab, viewModeGroup]);
-  const startPanGroup = useCallback((e) => {
-    if (e.target.closest('g') || e.target.closest('button')) return;
-    const el = graphContainerGroupRef.current;
-    if (!el) return;
-    e.preventDefault();
-    e.stopPropagation();
-    panStartGroupRef.current = { x: e.clientX, y: e.clientY, scrollLeft: el.scrollLeft, scrollTop: el.scrollTop };
-    setPanningGroup(true);
-    const onMove = (ev) => {
-      if (!panStartGroupRef.current) return;
-      const container = graphContainerGroupRef.current;
-      if (!container) return;
-      container.scrollLeft = panStartGroupRef.current.scrollLeft + (panStartGroupRef.current.x - ev.clientX);
-      container.scrollTop = panStartGroupRef.current.scrollTop + (panStartGroupRef.current.y - ev.clientY);
-    };
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-      setPanningGroup(false);
-      panStartGroupRef.current = null;
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }, []);
-
-  const graphLayoutGroup = useMemo(() => {
-    const { nodes, links } = graphDataGroup;
-    const byLevel = new Map();
-    nodes.forEach((n) => {
-      if (!visibleIdsGroup.has(n.id)) return;
-      const L = levelMapGroup.get(n.id) ?? 0;
-      if (!byLevel.has(L)) byLevel.set(L, []);
-      byLevel.get(L).push(n.id);
-    });
-    const nodeWidth = 170;
-    const nodeHeight = 56;
-    const padding = 40;
-    const gap = 24;
-    const levelCount = byLevel.size;
-    const maxLevelWidth = levelCount === 0 ? 0 : Math.max(...Array.from(byLevel.values()).map((ids) => ids.length * (nodeWidth + gap) - gap));
-    const contentMinWidth = maxLevelWidth + 2 * padding;
-    const contentMinHeight = levelCount * (nodeHeight + 40) + 2 * padding;
-    const width = Math.max(graphSizeGroup.width, contentMinWidth, 400);
-    const height = Math.max(graphSizeGroup.height, contentMinHeight, 300);
-    const positions = {};
-    byLevel.forEach((ids, L) => {
-      const y = padding + L * (nodeHeight + 40);
-      const totalW = ids.length * (nodeWidth + gap) - gap;
-      const startX = (width - totalW) / 2 + nodeWidth / 2 + gap / 2;
-      ids.forEach((id, i) => {
-        positions[id] = { x: startX + i * (nodeWidth + gap), y };
-      });
-    });
-    return { positions, width, height };
-  }, [graphDataGroup, visibleIdsGroup, levelMapGroup, graphSizeGroup]);
-
-  const [nodePositionsGroup, setNodePositionsGroup] = useState({});
-  const [draggingNodeIdGroup, setDraggingNodeIdGroup] = useState(null);
-  const graphSvgGroupRef = useRef(null);
-  const draggedRefGroup = useRef(false);
-  useEffect(() => {
-    setNodePositionsGroup({ ...graphLayoutGroup.positions });
-  }, [graphDataGroup, graphSizeGroup]);
-  const getEffectivePosGroup = (id) => nodePositionsGroup[id] ?? graphLayoutGroup.positions[id];
-  useEffect(() => {
-    if (viewModeGroup !== 'graph') {
-      hasCenteredGroupRef.current = false;
-      return;
-    }
-    const el = graphContainerGroupRef.current;
-    if (!el || hasCenteredGroupRef.current) return;
-    const id = requestAnimationFrame(() => {
-      const cw = el.clientWidth;
-      const ch = el.clientHeight;
-      const contentW = graphLayoutGroup.width * graphZoomGroup;
-      const contentH = graphLayoutGroup.height * graphZoomGroup;
-      if (contentW > cw) el.scrollLeft = (contentW - cw) / 2;
-      if (contentH > ch) el.scrollTop = (contentH - ch) / 2;
-      hasCenteredGroupRef.current = true;
-    });
-    return () => cancelAnimationFrame(id);
-  }, [viewModeGroup, graphLayoutGroup.width, graphLayoutGroup.height, graphZoomGroup]);
-  useEffect(() => {
-    if (!draggingNodeIdGroup || !graphSvgGroupRef.current) return;
-    const svg = graphSvgGroupRef.current;
-    const toSvg = (clientX, clientY) => {
-      const pt = svg.createSVGPoint();
-      pt.x = clientX;
-      pt.y = clientY;
-      return pt.matrixTransform(svg.getScreenCTM().inverse());
-    };
-    const onMove = (e) => {
-      draggedRefGroup.current = true;
-      const p = toSvg(e.clientX, e.clientY);
-      setNodePositionsGroup((prev) => ({ ...prev, [draggingNodeIdGroup]: { x: p.x, y: p.y } }));
-    };
-    const onUp = () => setDraggingNodeIdGroup(null);
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-  }, [draggingNodeIdGroup]);
-
-  // --- Site tab graph: tree with Master-Organization as single root (parent → child links)
-  const graphDataSite = useMemo(() => {
-    const nodes = [
-      { id: MASTER_ORG_ROOT_ID, name: 'Master-Organization', nodeType: 'master-org' },
-      ...groups.map((g) => ({
-        id: String(g.id),
-        name: getGroupPathLabel(g.id),
-        nodeType: hasNoGroup(g.parent_group_id) ? 'master-org' : 'other-group',
-      })),
-      ...records.map((r) => ({
-        id: String(r.id),
-        name: r.name || r.id,
-        nodeType: 'site',
-      })),
-    ];
-    const links = [];
-    groups.forEach((g) => {
-      const gid = String(g.id);
-      if (hasNoGroup(g.parent_group_id)) {
-        links.push({ source: MASTER_ORG_ROOT_ID, target: gid });
+  function parseCSVLine(line) {
+    const result = [];
+    let i = 0;
+    while (i < line.length) {
+      if (line[i] === '"') {
+        i++;
+        let cell = '';
+        while (i < line.length) {
+          if (line[i] === '"' && line[i + 1] === '"') { cell += '"'; i += 2; }
+          else if (line[i] === '"') { i++; break; }
+          else { cell += line[i++]; }
+        }
+        result.push(cell);
+        while (i < line.length && (line[i] === ',' || line[i] === ' ')) i++;
       } else {
-        links.push({ source: String(g.parent_group_id), target: gid });
+        let cell = '';
+        while (i < line.length && line[i] !== ',') cell += line[i++];
+        result.push(cell.trim());
+        if (line[i] === ',') i++;
       }
-    });
-    records.forEach((r) => {
-      if (!hasNoGroup(r.group_id)) {
-        links.push({ source: String(r.group_id), target: String(r.id) });
-      } else {
-        links.push({ source: MASTER_ORG_ROOT_ID, target: String(r.id) });
-      }
-    });
-    return { nodes, links };
-  }, [groups, records]);
-
-  const { levelMapSite, childrenMapSite, parentMapSite } = useMemo(() => {
-    const { nodes, links } = graphDataSite;
-    const targets = new Set(links.map((l) => l.target));
-    const roots = nodes.filter((n) => !targets.has(n.id));
-    const level = new Map();
-    roots.forEach((n) => level.set(n.id, 0));
-    let frontier = roots.map((n) => n.id);
-    while (frontier.length) {
-      const next = [];
-      frontier.forEach((src) => {
-        links.filter((l) => l.source === src).forEach((l) => {
-          if (!level.has(l.target)) {
-            level.set(l.target, (level.get(src) ?? 0) + 1);
-            next.push(l.target);
-          }
-        });
-      });
-      frontier = next;
     }
-    nodes.forEach((n) => { if (!level.has(n.id)) level.set(n.id, 0); });
-    const children = new Map();
-    const parent = new Map();
-    links.forEach((l) => {
-      if (!children.has(l.source)) children.set(l.source, []);
-      children.get(l.source).push(l.target);
-      parent.set(l.target, l.source);
-    });
-    return { levelMapSite: level, childrenMapSite: children, parentMapSite: parent };
-  }, [graphDataSite]);
-
-  const [expandedNodesSite, setExpandedNodesSite] = useState(() => new Set());
-  const [collapsedNodesSite, setCollapsedNodesSite] = useState(() => new Set());
-
-  const isExpandedSite = (id) => {
-    const level = levelMapSite.get(id) ?? 0;
-    if (collapsedNodesSite.has(id)) return false;
-    if (level <= 1) return true;
-    return expandedNodesSite.has(id);
-  };
-
-  const visibleIdsSite = useMemo(() => {
-    const visible = new Set();
-    const parentExpanded = (pid) => {
-      const l = levelMapSite.get(pid) ?? 0;
-      if (collapsedNodesSite.has(pid)) return false;
-      return l <= 1 || expandedNodesSite.has(pid);
-    };
-    const isVisible = (id) => {
-      if (visible.has(id)) return true;
-      const p = parentMapSite.get(id);
-      if (!p) {
-        visible.add(id);
-        return true;
-      }
-      if (!parentExpanded(p)) return false;
-      if (!isVisible(p)) return false;
-      visible.add(id);
-      return true;
-    };
-    graphDataSite.nodes.forEach((n) => isVisible(n.id));
-    return visible;
-  }, [graphDataSite, levelMapSite, parentMapSite, expandedNodesSite, collapsedNodesSite]);
-
-  const graphContainerSiteRef = useRef(null);
-  const [graphSizeSite, setGraphSizeSite] = useState({ width: 800, height: 400 });
-  useEffect(() => {
-    const el = graphContainerSiteRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      const rect = entries[0]?.contentRect;
-      if (rect && typeof rect.width === 'number' && typeof rect.height === 'number') {
-        setGraphSizeSite({ width: Math.max(rect.width, 400), height: Math.max(rect.height, 300) });
-      }
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [activeTab, viewMode]);
-  useEffect(() => {
-    const el = graphContainerSiteRef.current;
-    if (!el) return;
-    const onWheel = (e) => {
-      const delta = -e.deltaY * 0.002;
-      e.preventDefault();
-      setGraphZoomSite((z) => {
-        const next = z + delta;
-        if ((next < 0.5 && delta < 0) || (next > 2 && delta > 0)) return z;
-        return Math.min(2, Math.max(0.5, next));
-      });
-    };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
-  }, [activeTab, viewMode]);
-  const startPanSite = useCallback((e) => {
-    if (e.target.closest('g') || e.target.closest('button')) return;
-    const el = graphContainerSiteRef.current;
-    if (!el) return;
-    e.preventDefault();
-    e.stopPropagation();
-    panStartSiteRef.current = { x: e.clientX, y: e.clientY, scrollLeft: el.scrollLeft, scrollTop: el.scrollTop };
-    setPanningSite(true);
-    const onMove = (ev) => {
-      if (!panStartSiteRef.current) return;
-      const container = graphContainerSiteRef.current;
-      if (!container) return;
-      container.scrollLeft = panStartSiteRef.current.scrollLeft + (panStartSiteRef.current.x - ev.clientX);
-      container.scrollTop = panStartSiteRef.current.scrollTop + (panStartSiteRef.current.y - ev.clientY);
-    };
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-      setPanningSite(false);
-      panStartSiteRef.current = null;
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }, []);
-
-  const graphLayoutSite = useMemo(() => {
-    const { nodes } = graphDataSite;
-    const byLevel = new Map();
-    nodes.forEach((n) => {
-      if (!visibleIdsSite.has(n.id)) return;
-      const L = levelMapSite.get(n.id) ?? 0;
-      if (!byLevel.has(L)) byLevel.set(L, []);
-      byLevel.get(L).push(n.id);
-    });
-    const nodeWidth = 170;
-    const nodeHeight = 56;
-    const padding = 40;
-    const gap = 24;
-    const levelCount = byLevel.size;
-    const maxLevelWidth = levelCount === 0 ? 0 : Math.max(...Array.from(byLevel.values()).map((ids) => ids.length * (nodeWidth + gap) - gap));
-    const contentMinWidth = maxLevelWidth + 2 * padding;
-    const contentMinHeight = levelCount * (nodeHeight + 40) + 2 * padding;
-    const width = Math.max(graphSizeSite.width, contentMinWidth, 400);
-    const height = Math.max(graphSizeSite.height, contentMinHeight, 300);
-    const positions = {};
-    byLevel.forEach((ids, L) => {
-      const y = padding + L * (nodeHeight + 40);
-      const totalW = ids.length * (nodeWidth + gap) - gap;
-      const startX = (width - totalW) / 2 + nodeWidth / 2 + gap / 2;
-      ids.forEach((id, i) => {
-        positions[id] = { x: startX + i * (nodeWidth + gap), y };
-      });
-    });
-    return { positions, width, height };
-  }, [graphDataSite, visibleIdsSite, levelMapSite, graphSizeSite]);
-
-  const [nodePositionsSite, setNodePositionsSite] = useState({});
-  const [draggingNodeIdSite, setDraggingNodeIdSite] = useState(null);
-  const graphSvgSiteRef = useRef(null);
-  const draggedRefSite = useRef(false);
-  useEffect(() => {
-    setNodePositionsSite({ ...graphLayoutSite.positions });
-  }, [graphDataSite, graphSizeSite]);
-  const getEffectivePosSite = (id) => nodePositionsSite[id] ?? graphLayoutSite.positions[id];
-  useEffect(() => {
-    if (viewMode !== 'graph') {
-      hasCenteredSiteRef.current = false;
-      return;
-    }
-    const el = graphContainerSiteRef.current;
-    if (!el || hasCenteredSiteRef.current) return;
-    const id = requestAnimationFrame(() => {
-      const cw = el.clientWidth;
-      const ch = el.clientHeight;
-      const contentW = graphLayoutSite.width * graphZoomSite;
-      const contentH = graphLayoutSite.height * graphZoomSite;
-      if (contentW > cw) el.scrollLeft = (contentW - cw) / 2;
-      if (contentH > ch) el.scrollTop = (contentH - ch) / 2;
-      hasCenteredSiteRef.current = true;
-    });
-    return () => cancelAnimationFrame(id);
-  }, [viewMode, graphLayoutSite.width, graphLayoutSite.height, graphZoomSite]);
-  useEffect(() => {
-    if (!draggingNodeIdSite || !graphSvgSiteRef.current) return;
-    const svg = graphSvgSiteRef.current;
-    const toSvg = (clientX, clientY) => {
-      const pt = svg.createSVGPoint();
-      pt.x = clientX;
-      pt.y = clientY;
-      return pt.matrixTransform(svg.getScreenCTM().inverse());
-    };
-    const onMove = (e) => {
-      draggedRefSite.current = true;
-      const p = toSvg(e.clientX, e.clientY);
-      setNodePositionsSite((prev) => ({ ...prev, [draggingNodeIdSite]: { x: p.x, y: p.y } }));
-    };
-    const onUp = () => setDraggingNodeIdSite(null);
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-  }, [draggingNodeIdSite]);
+    return result;
+  }
+  function parseCSV(text) {
+    const lines = text.split(/\r?\n/).filter(Boolean);
+    if (!lines.length) return { headers: [], rows: [] };
+    const headers = parseCSVLine(lines[0]);
+    const rows = lines.slice(1).map((l) => parseCSVLine(l));
+    return { headers, rows };
+  }
 
   const userLabel = (id) => (id && id !== '00000000-0000-0000-0000-000000000000' ? (id.length > 8 ? id.slice(0, 8) + '…' : id) : '—');
   const userEmail = (id) => {
@@ -816,6 +398,161 @@ export default function SiteManagement() {
     });
   }, [records, sortKeySite, sortDirSite]);
 
+  const escapeCsv = (v) => {
+    const s = String(v ?? '');
+    if (s.includes(',') || s.includes('"') || s.includes('\n')) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  };
+  const exportGroupCSV = () => {
+    const headers = ['Name', 'Parent Group', 'Created By', 'Created On'];
+    const rows = sortedGroups.map((g) => [
+      escapeCsv(g.name),
+      escapeCsv(hasNoGroup(g.parent_group_id) ? masterOrgName : getGroupPathLabel(g.parent_group_id)),
+      escapeCsv(userEmail(g.created_by_user_id)),
+      escapeCsv(formatDate(g.created_at)),
+    ]);
+    const csv = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `site-groups-${currentAccountId || 'export'}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const exportSiteCSV = () => {
+    const headers = ['Name', 'Site Group', 'Master Owner', 'Created By', 'Created On'];
+    const rows = sortedRecords.map((r) => [
+      escapeCsv(r.name),
+      escapeCsv(organizationSiteGroupLabel(r)),
+      escapeCsv(masterOwnerDisplay(r)),
+      escapeCsv(userEmail(r.created_by_user_id)),
+      escapeCsv(formatDate(r.created_at)),
+    ]);
+    const csv = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `sites-${currentAccountId || 'export'}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const openImportPanel = () => {
+    setImportCsvHeaders([]);
+    setImportCsvRows([]);
+    setImportMapping({});
+    setImportDuplicates([]);
+    setImportResult({ created: 0, skipped: 0, failed: 0, errors: [] });
+    setImportPanelOpen(true);
+  };
+  const handleImportFile = (e) => {
+    const file = e?.target?.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const { headers, rows } = parseCSV(ev.target?.result ?? '');
+        setImportCsvHeaders(headers);
+        setImportCsvRows(rows);
+        const mapping = {};
+        if (headers.length > 0) mapping.name = String(0);
+        if (headers.length > 1) mapping[activeTab === 'group' ? 'parent_group' : 'site_group'] = String(1);
+        setImportMapping(mapping);
+        setImportDuplicates([]);
+        setImportResult({ created: 0, skipped: 0, failed: 0, errors: [] });
+      } catch (err) {
+        console.error(err);
+        setImportCsvHeaders([]);
+        setImportCsvRows([]);
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+    e.target.value = '';
+  };
+  const runDuplicateCheck = () => {
+    const keyName = importMapping.name;
+    const keyParent = importMapping[activeTab === 'group' ? 'parent_group' : 'site_group'];
+    if (keyName == null || keyParent == null) return;
+    const nameIdx = parseInt(keyName, 10);
+    const parentIdx = parseInt(keyParent, 10);
+    const existingSet = new Set();
+    if (activeTab === 'group') {
+      groups.forEach((g) => {
+        const parentLabel = hasNoGroup(g.parent_group_id) ? masterOrgName : getGroupPathLabel(g.parent_group_id);
+        existingSet.add(`${(g.name || '').trim()}\n${(parentLabel || '').trim()}`);
+      });
+    } else {
+      records.forEach((r) => {
+        const parentLabel = organizationSiteGroupLabel(r);
+        existingSet.add(`${(r.name || '').trim()}\n${(parentLabel || '').trim()}`);
+      });
+    }
+    const duplicates = [];
+    importCsvRows.forEach((row, i) => {
+      const name = (row[nameIdx] ?? '').trim();
+      const parent = (row[parentIdx] ?? '').trim();
+      if (existingSet.has(`${name}\n${parent}`)) duplicates.push({ index: i, name, parent });
+    });
+    setImportDuplicates(duplicates);
+  };
+  const runImport = async () => {
+    const keyName = importMapping.name;
+    const keyParent = importMapping[activeTab === 'group' ? 'parent_group' : 'site_group'];
+    if (keyName == null || keyParent == null) return;
+    const nameIdx = parseInt(keyName, 10);
+    const parentIdx = parseInt(keyParent, 10);
+    const duplicateSet = new Set(importDuplicates.map((d) => d.index));
+    const toImport = importCsvRows
+      .map((row, i) => ({ row, i }))
+      .filter(({ i }) => !duplicateSet.has(i))
+      .map(({ row }) => ({ name: (row[nameIdx] ?? '').trim(), parentLabel: (row[parentIdx] ?? '').trim() }));
+    let created = 0;
+    const errors = [];
+    setImportBusy(true);
+    setImportResult({ created: 0, skipped: importDuplicates.length, failed: 0, errors: [] });
+    try {
+      for (const { name, parentLabel } of toImport) {
+        if (!name) continue;
+        try {
+          if (activeTab === 'group') {
+            const parent_group_id = getGroupIdByPathLabel(parentLabel) || defaultGroupId || '';
+            await createGroup({ account_id: currentAccountId, name, parent_group_id: parent_group_id || undefined });
+          } else {
+            const group_id = getGroupIdByPathLabel(parentLabel) || defaultGroupId || '';
+            await createSite({ account_id: currentAccountId, group_id, name, group_name: parentLabel, is_default: false });
+          }
+          created++;
+        } catch (err) {
+          errors.push({ name, message: err?.message || String(err) });
+        }
+      }
+      setImportResult({ created, skipped: importDuplicates.length, failed: errors.length, errors });
+      if (created > 0) {
+        if (activeTab === 'group') fetchGroups(currentAccountId).then((list) => setGroups(Array.isArray(list) ? list : []));
+        else fetchSites(currentAccountId).then((list) => setRecords(Array.isArray(list) ? list : []));
+      }
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
+  const onDeleteSelectedGroups = async (ids) => {
+    if (!window.confirm(`Delete ${ids.size} selected site group(s)?`)) return;
+    for (const id of ids) {
+      const res = await deleteGroup(id);
+      if (res && res.deleted) setGroups((prev) => prev.filter((gr) => String(gr.id) !== String(id)));
+    }
+    setSelectedGroupIds(new Set());
+  };
+  const onDeleteSelectedSites = async (ids) => {
+    if (!window.confirm(`Delete ${ids.size} selected site(s)?`)) return;
+    for (const id of ids) {
+      const res = await deleteSite(id);
+      if (res && res.deleted) setRecords((prev) => prev.filter((r) => String(r.id) !== String(id)));
+    }
+    setSelectedSiteIds(new Set());
+  };
+
   const [searchQuery, setSearchQuery] = useState('');
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
   const searchScrollRefs = useRef({});
@@ -851,12 +588,15 @@ export default function SiteManagement() {
     }).map((r) => String(r.id));
   }, [records, searchWord]);
 
+  const siteGraphNodeNames = useMemo(() => [
+    { id: MASTER_ORG_ROOT_ID, name: 'Master-Organization' },
+    ...groups.map((g) => ({ id: String(g.id), name: getGroupPathLabel(g.id) })),
+    ...records.map((r) => ({ id: String(r.id), name: r.name || r.id })),
+  ], [groups, records, getGroupPathLabel]);
   const matchIdsSiteGraph = useMemo(() => {
     if (!searchWord) return [];
-    return graphDataSite.nodes.filter((n) =>
-      (n.name || '').toLowerCase().includes(searchWord)
-    ).map((n) => n.id);
-  }, [graphDataSite.nodes, searchWord]);
+    return siteGraphNodeNames.filter((n) => (n.name || '').toLowerCase().includes(searchWord)).map((n) => n.id);
+  }, [siteGraphNodeNames, searchWord]);
 
   const matchIds = activeTab === 'group'
     ? (viewModeGroup === 'graph' ? matchIdsGroup : matchIdsGroup)
@@ -934,7 +674,7 @@ export default function SiteManagement() {
                 </>
               )}
             </div>
-            <div style={{ display: 'flex', gap: 0 }}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               {activeTab === 'group' ? (
                 <>
                   <button type="button" style={{ ...s.iconBtn, ...(viewModeGroup === 'grid' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewModeGroup('grid')} title="Grid view" aria-label="Grid view">
@@ -945,6 +685,12 @@ export default function SiteManagement() {
                   </button>
                   <button type="button" style={{ ...s.iconBtn, ...(viewModeGroup === 'graph' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewModeGroup('graph')} title="Link view (Name vs Parent group)" aria-label="Link view">
                     <IconLink size={16} />
+                  </button>
+                  <button type="button" style={s.iconBtn} onClick={exportGroupCSV} title="Export to CSV" aria-label="Export to CSV">
+                    <IconExport size={16} />
+                  </button>
+                  <button type="button" style={s.iconBtn} onClick={openImportPanel} title="Import from CSV" aria-label="Import from CSV">
+                    <IconImport size={16} />
                   </button>
                   <button
                     type="button"
@@ -982,6 +728,12 @@ export default function SiteManagement() {
                   <button type="button" style={{ ...s.iconBtn, ...(viewMode === 'graph' ? { opacity: 1, border: `1px solid ${t.color.primary}` } : {}) }} onClick={() => setViewMode('graph')} title="Link view (Site Name vs Site Group)" aria-label="Link view">
                     <IconLink size={16} />
                   </button>
+                  <button type="button" style={s.iconBtn} onClick={exportSiteCSV} title="Export to CSV" aria-label="Export to CSV">
+                    <IconExport size={16} />
+                  </button>
+                  <button type="button" style={s.iconBtn} onClick={openImportPanel} title="Import from CSV" aria-label="Import from CSV">
+                    <IconImport size={16} />
+                  </button>
                   <button
                     type="button"
                     style={s.iconBtn}
@@ -1013,647 +765,69 @@ export default function SiteManagement() {
         </div>
         {activeTab === 'group' ? (
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            {/* Site groups: grid, ticket, or graph */}
             <div style={{ marginTop: 0, flex: 1, minHeight: 0, overflow: viewModeGroup === 'graph' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column' }}>
-              {groups.length === 0 ? (
-                <p style={s.empty}>No site groups. Use the + button to add site groups.</p>
-              ) : viewModeGroup === 'graph' ? (
-                <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: t.color.surface, borderRadius: 8 }}>
-                  <div
-                    ref={graphContainerGroupRef}
-                    style={{
-                      flex: 1,
-                      minHeight: 0,
-                      overflowX: 'auto',
-                      overflowY: 'auto',
-                      cursor: panningGroup ? 'grabbing' : draggingNodeIdGroup ? undefined : 'grab',
-                      userSelect: panningGroup ? 'none' : undefined,
-                    }}
-                    onMouseDown={startPanGroup}
-                  >
-                    <div style={{ width: graphLayoutGroup.width * graphZoomGroup, height: graphLayoutGroup.height * graphZoomGroup, display: 'block' }}>
-                      <div style={{ transform: `scale(${graphZoomGroup})`, transformOrigin: '0 0', width: graphLayoutGroup.width, height: graphLayoutGroup.height }}>
-                        <svg
-                          ref={graphSvgGroupRef}
-                          viewBox={`0 0 ${graphLayoutGroup.width} ${graphLayoutGroup.height}`}
-                          style={{
-                            display: 'block',
-                            width: graphLayoutGroup.width,
-                            height: graphLayoutGroup.height,
-                            cursor: draggingNodeIdGroup ? 'grabbing' : undefined,
-                          }}
-                        >
-                    <defs>
-                      <marker id="arrow-group" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-                        <path d="M0,0 L8,4 L0,8 Z" fill={t.color.textMuted || t.color.text} />
-                      </marker>
-                    </defs>
-                    <rect x={0} y={0} width={graphLayoutGroup.width} height={graphLayoutGroup.height} fill="transparent" style={{ pointerEvents: 'all' }} aria-hidden="true" />
-                    {graphDataGroup.links
-                      .filter((link) => visibleIdsGroup.has(link.source) && visibleIdsGroup.has(link.target))
-                      .map((link, i) => {
-                        const src = getEffectivePosGroup(link.source);
-                        const tgt = getEffectivePosGroup(link.target);
-                        if (!src || !tgt) return null;
-                        const nodeH = 56;
-                        return (
-                          <line
-                            key={`${link.source}-${link.target}-${i}`}
-                            x1={src.x}
-                            y1={src.y}
-                            x2={tgt.x}
-                            y2={tgt.y - nodeH / 2}
-                            stroke={t.color.border}
-                            strokeWidth={1.5}
-                            markerEnd="url(#arrow-group)"
-                          />
-                        );
-                      })}
-                    {graphDataGroup.nodes
-                      .filter((node) => visibleIdsGroup.has(node.id))
-                      .map((node) => {
-                        const pos = getEffectivePosGroup(node.id);
-                        if (!pos) return null;
-                        const isMaster = node.nodeType === 'master-org';
-                        const fill = isMaster ? '#fef3c7' : '#dbeafe';
-                        const stroke = isMaster ? '#d97706' : '#2563eb';
-const nodeW = 170;
-                      const nodeH = 56;
-                      const hasChildren = (childrenMapGroup.get(node.id)?.length ?? 0) > 0;
-                        const expanded = isExpandedGroup(node.id);
-                        const groupRec = node.id !== MASTER_ORG_ROOT_ID ? groups.find((g) => String(g.id) === node.id) : null;
-                        const btnSize = 18;
-                        const numActionBtns = groupRec ? 2 : 0;
-                        const actionsW = numActionBtns * btnSize;
-                        return (
-                          <g
-                            key={node.id}
-                            ref={(el) => { if (el) searchScrollRefs.current[node.id] = el; }}
-                            style={{ cursor: draggingNodeIdGroup ? 'grabbing' : 'grab' }}
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              draggedRefGroup.current = false;
-                              setDraggingNodeIdGroup(node.id);
-                            }}
-                            onClick={() => {
-                              if (draggedRefGroup.current) return;
-                              setGroupForm((prev) => ({
-                                ...prev,
-                                parent_group_id: node.id === MASTER_ORG_ROOT_ID ? (defaultGroupId || '') : node.id,
-                              }));
-                              draggedRefGroup.current = false;
-                            }}
-                          >
-                            {currentMatchId === node.id && (
-                              <rect
-                                x={pos.x - nodeW / 2 - 4}
-                                y={pos.y - nodeH / 2 - 4}
-                                width={nodeW + 8}
-                                height={nodeH + 8}
-                                rx={10}
-                                fill="none"
-                                stroke="#b45309"
-                                strokeWidth={5}
-                              />
-                            )}
-                            <rect
-                              x={pos.x - nodeW / 2}
-                              y={pos.y - nodeH / 2}
-                              width={nodeW}
-                              height={nodeH}
-                              rx={6}
-                              fill={fill}
-                              stroke={currentMatchId === node.id ? '#b45309' : stroke}
-                              strokeWidth={currentMatchId === node.id ? 3 : 1.5}
-                            />
-                            <foreignObject
-                              x={pos.x - nodeW / 2}
-                              y={pos.y - nodeH / 2}
-                              width={nodeW}
-                              height={nodeH}
-                              style={{ overflow: 'hidden', pointerEvents: 'none' }}
-                            >
-                              <div
-                                xmlns="http://www.w3.org/1999/xhtml"
-                                style={{
-                                  width: '100%',
-                                  height: '100%',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  padding: '4px 8px',
-                                  wordBreak: 'break-word',
-                                  overflow: 'hidden',
-                                  fontSize: 12,
-                                  fontWeight: 600,
-                                  color: '#1f2937',
-                                  textAlign: 'center',
-                                  lineHeight: 1.25,
-                                  boxSizing: 'border-box',
-                                }}
-                              >
-                                {node.name || node.id}
-                              </div>
-                            </foreignObject>
-                            {groupRec && (
-                              <foreignObject
-                                x={pos.x - nodeW / 2}
-                                y={pos.y - nodeH / 2}
-                                width={actionsW}
-                                height={btnSize}
-                                style={{ overflow: 'visible', pointerEvents: 'all' }}
-                              >
-                                <div
-                                  xmlns="http://www.w3.org/1999/xhtml"
-                                  style={{
-                                    display: 'flex',
-                                    flexDirection: 'row',
-                                    alignItems: 'center',
-                                    justifyContent: 'flex-start',
-                                    gap: 2,
-                                    width: '100%',
-                                    height: '100%',
-                                    background: 'transparent',
-                                  }}
-                                >
-                                  <button
-                                    type="button"
-                                    title="Edit"
-                                    style={{ ...s.iconBtn, padding: 0, width: btnSize, height: btnSize, minWidth: btnSize, minHeight: btnSize }}
-                                    onClick={(e) => { e.stopPropagation(); handleEditGroup(groupRec); }}
-                                  >
-                                    <IconEdit size={12} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    title="Delete"
-                                    style={{ ...s.iconBtn, padding: 0, width: btnSize, height: btnSize, minWidth: btnSize, minHeight: btnSize }}
-                                    onClick={(e) => { e.stopPropagation(); handleDeleteGroup(node.id); }}
-                                  >
-                                    <IconTrash size={12} />
-                                  </button>
-                                </div>
-                              </foreignObject>
-                            )}
-                            {hasChildren && (
-                              <g
-                                style={{ cursor: 'pointer', pointerEvents: 'all' }}
-                                onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  const level = levelMapGroup.get(node.id) ?? 0;
-                                  if (level <= 1) {
-                                    setCollapsedNodesGroup((prev) => {
-                                      const next = new Set(prev);
-                                      if (next.has(node.id)) next.delete(node.id);
-                                      else next.add(node.id);
-                                      return next;
-                                    });
-                                  } else {
-                                    setExpandedNodesGroup((prev) => {
-                                      const next = new Set(prev);
-                                      if (next.has(node.id)) next.delete(node.id);
-                                      else next.add(node.id);
-                                      return next;
-                                    });
-                                  }
-                                }}
-                                transform={`translate(${pos.x + nodeW / 2 - 9}, ${pos.y - nodeH / 2 + 9})`}
-                              >
-                                <circle r={7} fill="transparent" stroke={t.color.border} strokeWidth={1.2} />
-                                {expanded ? (
-                                  <path d="M -3 0 L 3 0" stroke={expandIconStroke} strokeWidth={1.5} strokeLinecap="round" />
-                                ) : (
-                                  <path d="M -3 0 L 3 0 M 0 -3 L 0 3" stroke={expandIconStroke} strokeWidth={1.5} strokeLinecap="round" />
-                                )}
-                              </g>
-                            )}
-                          </g>
-                        );
-                      })}
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : viewModeGroup === 'ticket' ? (
-                <div style={s.ticketList}>
-                  {groups.map((g) => (
-                    <div key={g.id} ref={(el) => { if (el) searchScrollRefs.current[g.id] = el; }} style={{ ...s.ticketCard, ...(currentMatchId === String(g.id) ? { backgroundColor: '#fef3c7', borderLeft: '6px solid #b45309', boxShadow: '0 0 0 2px #d97706', color: '#000' } : {}) }}>
-                      <div style={s.ticketMain}>
-                        <strong>{g.name || '—'}</strong>
-                        <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>
-                          Parent group: {hasNoGroup(g.parent_group_id) ? '—' : getGroupPathLabel(g.parent_group_id)}
-                        </span>
-                        <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>Created by: {userEmail(g.created_by_user_id)}</span>
-                        <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>Created on: {formatDate(g.created_at)}</span>
-                      </div>
-                      <div style={s.actions}>
-                        <button type="button" style={s.iconBtn} onClick={() => handleEditGroup(g)} title="Edit">
-                          <IconEdit size={16} />
-                        </button>
-                        <button type="button" style={s.iconBtn} onClick={() => handleDeleteGroup(g.id)} title="Delete">
-                          <IconTrash size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={s.gridWrapper}>
-                  {selectedGroupIds.size > 0 && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                      <button type="button" style={{ ...s.btn, ...s.btnDanger }} onClick={async () => {
-                        if (!window.confirm(`Delete ${selectedGroupIds.size} selected site group(s)?`)) return;
-                        for (const id of selectedGroupIds) {
-                          const res = await deleteGroup(id);
-                          if (res && res.deleted) setGroups((prev) => prev.filter((gr) => String(gr.id) !== String(id)));
-                        }
-                        setSelectedGroupIds(new Set());
-                      }}>
-                        Delete selected ({selectedGroupIds.size})
-                      </button>
-                    </div>
-                  )}
-                  <div style={{ ...s.grid(gridColsGroups), ...s.gridHeader }}>
-                    <span style={{ display: 'flex', alignItems: 'center' }}>
-                      <input type="checkbox" checked={sortedGroups.length > 0 && sortedGroups.every((g) => selectedGroupIds.has(String(g.id)))} onChange={(e) => setSelectedGroupIds(e.target.checked ? new Set(sortedGroups.map((g) => String(g.id))) : new Set())} style={{ margin: 0 }} />
-                    </span>
-                    <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKeyGroup('name'); setSortDirGroup((d) => (sortKeyGroup === 'name' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Name {sortKeyGroup === 'name' ? (sortDirGroup === 'asc' ? '▲' : '▼') : ''}</span>
-                    <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKeyGroup('parent'); setSortDirGroup((d) => (sortKeyGroup === 'parent' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Parent group {sortKeyGroup === 'parent' ? (sortDirGroup === 'asc' ? '▲' : '▼') : ''}</span>
-                    <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKeyGroup('created_by'); setSortDirGroup((d) => (sortKeyGroup === 'created_by' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Created by {sortKeyGroup === 'created_by' ? (sortDirGroup === 'asc' ? '▲' : '▼') : ''}</span>
-                    <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKeyGroup('created_at'); setSortDirGroup((d) => (sortKeyGroup === 'created_at' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Created on {sortKeyGroup === 'created_at' ? (sortDirGroup === 'asc' ? '▲' : '▼') : ''}</span>
-                    <span>Action</span>
-                  </div>
-                  {sortedGroups.map((g) => (
-                    <div key={g.id} ref={(el) => { if (el) searchScrollRefs.current[g.id] = el; }} style={{ ...s.grid(gridColsGroups), ...(currentMatchId === String(g.id) ? { backgroundColor: '#fef3c7', borderLeft: '4px solid #b45309', outline: '2px solid #d97706', outlineOffset: '-2px', color: '#000' } : {}) }}>
-                      <span style={{ display: 'flex', alignItems: 'center' }}><input type="checkbox" checked={selectedGroupIds.has(String(g.id))} onChange={() => setSelectedGroupIds((prev) => { const next = new Set(prev); if (next.has(String(g.id))) next.delete(String(g.id)); else next.add(String(g.id)); return next; })} style={{ margin: 0 }} /></span>
-                      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.name || '—'}</span>
-                      <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {hasNoGroup(g.parent_group_id) ? '—' : getGroupPathLabel(g.parent_group_id)}
-                      </span>
-                      <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{userEmail(g.created_by_user_id)}</span>
-                      <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatDate(g.created_at)}</span>
-                      <div style={s.actions}>
-                        <button type="button" style={s.iconBtn} onClick={() => handleEditGroup(g)} title="Edit">
-                          <IconEdit size={16} />
-                        </button>
-                        <button type="button" style={s.iconBtn} onClick={() => handleDeleteGroup(g.id)} title="Delete">
-                          <IconTrash size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <SiteManagementGroups
+                groups={groups}
+                users={users}
+                s={s}
+                t={t}
+                viewModeGroup={viewModeGroup}
+                setViewModeGroup={setViewModeGroup}
+                sortKeyGroup={sortKeyGroup}
+                setSortKeyGroup={setSortKeyGroup}
+                sortDirGroup={sortDirGroup}
+                setSortDirGroup={setSortDirGroup}
+                sortedGroups={sortedGroups}
+                selectedGroupIds={selectedGroupIds}
+                setSelectedGroupIds={setSelectedGroupIds}
+                searchScrollRefs={searchScrollRefs}
+                currentMatchId={currentMatchId}
+                getGroupPathLabel={getGroupPathLabel}
+                hasNoGroup={hasNoGroup}
+                userEmail={userEmail}
+                formatDate={formatDate}
+                defaultGroupId={defaultGroupId}
+                handleEditGroup={handleEditGroup}
+                handleDeleteGroup={handleDeleteGroup}
+                setGroupForm={setGroupForm}
+                onDeleteSelectedGroups={onDeleteSelectedGroups}
+              />
             </div>
           </div>
         ) : (
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            {/* Sites: grid, ticket, or graph */}
             <div style={{ marginTop: 0, flex: 1, minHeight: 0, overflow: viewMode === 'graph' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column' }}>
-              {viewMode === 'graph' ? (
-                graphDataSite.nodes.length === 0 ? (
-                  <p style={s.empty}>No site groups or sites. Use the Add panel to add in bulk.</p>
-                ) : (
-                <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: t.color.surface, borderRadius: 8 }}>
-                  <div
-                    ref={graphContainerSiteRef}
-                    style={{
-                      flex: 1,
-                      minHeight: 0,
-                      overflowX: 'auto',
-                      overflowY: 'auto',
-                      cursor: panningSite ? 'grabbing' : draggingNodeIdSite ? undefined : 'grab',
-                      userSelect: panningSite ? 'none' : undefined,
-                    }}
-                    onMouseDown={startPanSite}
-                  >
-                    <div style={{ width: graphLayoutSite.width * graphZoomSite, height: graphLayoutSite.height * graphZoomSite, display: 'block' }}>
-                      <div style={{ transform: `scale(${graphZoomSite})`, transformOrigin: '0 0', width: graphLayoutSite.width, height: graphLayoutSite.height }}>
-                        <svg
-                          ref={graphSvgSiteRef}
-                          viewBox={`0 0 ${graphLayoutSite.width} ${graphLayoutSite.height}`}
-                          style={{
-                            display: 'block',
-                            width: graphLayoutSite.width,
-                            height: graphLayoutSite.height,
-                            cursor: draggingNodeIdSite ? 'grabbing' : undefined,
-                          }}
-                        >
-                    <defs>
-                      <marker id="arrow-site" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-                        <path d="M0,0 L8,4 L0,8 Z" fill={t.color.textMuted || t.color.text} />
-                      </marker>
-                    </defs>
-                    <rect x={0} y={0} width={graphLayoutSite.width} height={graphLayoutSite.height} fill="transparent" style={{ pointerEvents: 'all' }} aria-hidden="true" />
-                    {graphDataSite.links
-                      .filter((link) => visibleIdsSite.has(link.source) && visibleIdsSite.has(link.target))
-                      .map((link, i) => {
-                        const src = getEffectivePosSite(link.source);
-                        const tgt = getEffectivePosSite(link.target);
-                        if (!src || !tgt) return null;
-                        const nodeH = 56;
-                        return (
-                          <line
-                            key={`${link.source}-${link.target}-${i}`}
-                            x1={src.x}
-                            y1={src.y}
-                            x2={tgt.x}
-                            y2={tgt.y - nodeH / 2}
-                            stroke={t.color.border}
-                            strokeWidth={1.5}
-                            markerEnd="url(#arrow-site)"
-                          />
-                        );
-                      })}
-                    {graphDataSite.nodes
-                      .filter((node) => visibleIdsSite.has(node.id))
-                      .map((node) => {
-                        const pos = getEffectivePosSite(node.id);
-                        if (!pos) return null;
-                        const isMaster = node.nodeType === 'master-org';
-                        const isGroup = node.nodeType === 'other-group';
-                        const isSite = node.nodeType === 'site';
-                        const fill = isMaster ? '#fef3c7' : isGroup ? '#dbeafe' : '#d1fae5';
-                        const stroke = isMaster ? '#d97706' : isGroup ? '#2563eb' : '#059669';
-                        const nodeW = 170;
-                        const nodeH = 56;
-                        const hasChildren = (childrenMapSite.get(node.id)?.length ?? 0) > 0;
-                        const expanded = isExpandedSite(node.id);
-                        const siteRec = isSite ? records.find((r) => String(r.id) === node.id) : null;
-                        const groupRec = isGroup ? groups.find((g) => String(g.id) === node.id) : null;
-                        const showActions = siteRec || groupRec;
-                        const btnSize = 18;
-                        const numActionBtns = siteRec ? 3 : (groupRec ? 2 : 0);
-                        const actionsW = numActionBtns * btnSize;
-                        return (
-                          <g
-                            key={node.id}
-                            ref={(el) => { if (el) searchScrollRefs.current[node.id] = el; }}
-                            style={{ cursor: draggingNodeIdSite ? 'grabbing' : 'grab' }}
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              draggedRefSite.current = false;
-                              setDraggingNodeIdSite(node.id);
-                            }}
-                            onClick={() => {
-                              if (draggedRefSite.current) return;
-                              const groupId = isSite && siteRec
-                                ? (siteRec.group_id ? String(siteRec.group_id) : '')
-                                : (node.id === MASTER_ORG_ROOT_ID ? (defaultGroupId || '') : (isGroup ? node.id : ''));
-                              setForm((prev) => ({ ...prev, group_id: groupId }));
-                              draggedRefSite.current = false;
-                            }}
-                          >
-                            {currentMatchId === node.id && (
-                              <rect
-                                x={pos.x - nodeW / 2 - 4}
-                                y={pos.y - nodeH / 2 - 4}
-                                width={nodeW + 8}
-                                height={nodeH + 8}
-                                rx={10}
-                                fill="none"
-                                stroke="#b45309"
-                                strokeWidth={5}
-                              />
-                            )}
-                            <rect
-                              x={pos.x - nodeW / 2}
-                              y={pos.y - nodeH / 2}
-                              width={nodeW}
-                              height={nodeH}
-                              rx={6}
-                              fill={fill}
-                              stroke={currentMatchId === node.id ? '#b45309' : stroke}
-                              strokeWidth={currentMatchId === node.id ? 3 : 1.5}
-                            />
-                            <foreignObject
-                              x={pos.x - nodeW / 2}
-                              y={pos.y - nodeH / 2}
-                              width={nodeW}
-                              height={nodeH}
-                              style={{ overflow: 'hidden', pointerEvents: 'none' }}
-                            >
-                              <div
-                                xmlns="http://www.w3.org/1999/xhtml"
-                                style={{
-                                  width: '100%',
-                                  height: '100%',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  padding: '4px 8px',
-                                  wordBreak: 'break-word',
-                                  overflow: 'hidden',
-                                  fontSize: 12,
-                                  fontWeight: 600,
-                                  color: '#1f2937',
-                                  textAlign: 'center',
-                                  lineHeight: 1.25,
-                                  boxSizing: 'border-box',
-                                }}
-                              >
-                                {node.name || node.id}
-                              </div>
-                            </foreignObject>
-                            {showActions && (
-                              <foreignObject
-                                x={pos.x - nodeW / 2}
-                                y={pos.y - nodeH / 2}
-                                width={actionsW}
-                                height={btnSize}
-                                style={{ overflow: 'visible', pointerEvents: 'all' }}
-                              >
-                                <div
-                                  xmlns="http://www.w3.org/1999/xhtml"
-                                  style={{
-                                    display: 'flex',
-                                    flexDirection: 'row',
-                                    alignItems: 'center',
-                                    justifyContent: 'flex-start',
-                                    gap: 2,
-                                    width: '100%',
-                                    height: '100%',
-                                    background: 'transparent',
-                                  }}
-                                >
-                                  {siteRec && (
-                                    <button
-                                      type="button"
-                                      title="Generate Token"
-                                      style={{ ...s.iconBtn, padding: 0, width: btnSize, height: btnSize, minWidth: btnSize, minHeight: btnSize }}
-                                      onClick={(e) => { e.stopPropagation(); navigate('/inventory/tokens', { state: { organizationId: siteRec.id } }); }}
-                                    >
-                                      <IconKey size={12} />
-                                    </button>
-                                  )}
-                                  {siteRec && (
-                                    <>
-                                      <button
-                                        type="button"
-                                        title="Edit"
-                                        style={{ ...s.iconBtn, padding: 0, width: btnSize, height: btnSize, minWidth: btnSize, minHeight: btnSize }}
-                                        onClick={(e) => { e.stopPropagation(); handleEdit(siteRec); }}
-                                      >
-                                        <IconEdit size={12} />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        title="Delete"
-                                        style={{ ...s.iconBtn, padding: 0, width: btnSize, height: btnSize, minWidth: btnSize, minHeight: btnSize }}
-                                        onClick={(e) => { e.stopPropagation(); handleDelete(siteRec.id); }}
-                                      >
-                                        <IconTrash size={12} />
-                                      </button>
-                                    </>
-                                  )}
-                                  {groupRec && !siteRec && (
-                                    <>
-                                      <button
-                                        type="button"
-                                        title="Edit"
-                                        style={{ ...s.iconBtn, padding: 0, width: btnSize, height: btnSize, minWidth: btnSize, minHeight: btnSize }}
-                                        onClick={(e) => { e.stopPropagation(); handleEditGroup(groupRec); }}
-                                      >
-                                        <IconEdit size={12} />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        title="Delete"
-                                        style={{ ...s.iconBtn, padding: 0, width: btnSize, height: btnSize, minWidth: btnSize, minHeight: btnSize }}
-                                        onClick={(e) => { e.stopPropagation(); handleDeleteGroup(node.id); }}
-                                      >
-                                        <IconTrash size={12} />
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-                              </foreignObject>
-                            )}
-                            {hasChildren && (
-                              <g
-                                style={{ cursor: 'pointer', pointerEvents: 'all' }}
-                                onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  const level = levelMapSite.get(node.id) ?? 0;
-                                  if (level <= 1) {
-                                    setCollapsedNodesSite((prev) => {
-                                      const next = new Set(prev);
-                                      if (next.has(node.id)) next.delete(node.id);
-                                      else next.add(node.id);
-                                      return next;
-                                    });
-                                  } else {
-                                    setExpandedNodesSite((prev) => {
-                                      const next = new Set(prev);
-                                      if (next.has(node.id)) next.delete(node.id);
-                                      else next.add(node.id);
-                                      return next;
-                                    });
-                                  }
-                                }}
-                                transform={`translate(${pos.x + nodeW / 2 - 9}, ${pos.y - nodeH / 2 + 9})`}
-                              >
-                                <circle r={7} fill="transparent" stroke={t.color.border} strokeWidth={1.2} />
-                                {expanded ? (
-                                  <path d="M -3 0 L 3 0" stroke={expandIconStroke} strokeWidth={1.5} strokeLinecap="round" />
-                                ) : (
-                                  <path d="M -3 0 L 3 0 M 0 -3 L 0 3" stroke={expandIconStroke} strokeWidth={1.5} strokeLinecap="round" />
-                                )}
-                              </g>
-                            )}
-                          </g>
-                        );
-                      })}
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                )
-              ) : records.length === 0 ? (
-                <p style={s.empty}>No sites. Use the Add panel to add sites or site groups.</p>
-              ) : viewMode === 'grid' ? (
-                <div style={s.gridWrapper}>
-                  {selectedSiteIds.size > 0 && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                      <button type="button" style={{ ...s.btn, ...s.btnDanger }} onClick={async () => {
-                        if (!window.confirm(`Delete ${selectedSiteIds.size} selected site(s)?`)) return;
-                        for (const id of selectedSiteIds) {
-                          const res = await deleteSite(id);
-                          if (res && res.deleted) setRecords((prev) => prev.filter((r) => String(r.id) !== String(id)));
-                        }
-                        setSelectedSiteIds(new Set());
-                      }}>
-                        Delete selected ({selectedSiteIds.size})
-                      </button>
-                    </div>
-                  )}
-                  <div style={{ ...s.grid(gridCols), ...s.gridHeader }}>
-                    <span style={{ display: 'flex', alignItems: 'center' }}>
-                      <input type="checkbox" checked={sortedRecords.length > 0 && sortedRecords.every((r) => selectedSiteIds.has(String(r.id)))} onChange={(e) => setSelectedSiteIds(e.target.checked ? new Set(sortedRecords.map((r) => String(r.id))) : new Set())} style={{ margin: 0 }} />
-                    </span>
-                    <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKeySite('name'); setSortDirSite((d) => (sortKeySite === 'name' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Site Name {sortKeySite === 'name' ? (sortDirSite === 'asc' ? '▲' : '▼') : ''}</span>
-                    <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKeySite('group'); setSortDirSite((d) => (sortKeySite === 'group' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Site Group {sortKeySite === 'group' ? (sortDirSite === 'asc' ? '▲' : '▼') : ''}</span>
-                    <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKeySite('master_owner'); setSortDirSite((d) => (sortKeySite === 'master_owner' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Master Owner {sortKeySite === 'master_owner' ? (sortDirSite === 'asc' ? '▲' : '▼') : ''}</span>
-                    <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKeySite('created_by'); setSortDirSite((d) => (sortKeySite === 'created_by' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Created by {sortKeySite === 'created_by' ? (sortDirSite === 'asc' ? '▲' : '▼') : ''}</span>
-                    <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => { setSortKeySite('created_at'); setSortDirSite((d) => (sortKeySite === 'created_at' ? (d === 'asc' ? 'desc' : 'asc') : 'asc')); }}>Created on {sortKeySite === 'created_at' ? (sortDirSite === 'asc' ? '▲' : '▼') : ''}</span>
-                    <span>Action</span>
-                  </div>
-                  {sortedRecords.map((r) => (
-                    <div key={r.id} ref={(el) => { if (el) searchScrollRefs.current[String(r.id)] = el; }} style={{ ...s.grid(gridCols), ...(currentMatchId === String(r.id) ? { backgroundColor: '#fef3c7', borderLeft: '4px solid #b45309', outline: '2px solid #d97706', outlineOffset: '-2px', color: '#000' } : {}) }}>
-                      <span style={{ display: 'flex', alignItems: 'center' }}><input type="checkbox" checked={selectedSiteIds.has(String(r.id))} onChange={() => setSelectedSiteIds((prev) => { const next = new Set(prev); if (next.has(String(r.id))) next.delete(String(r.id)); else next.add(String(r.id)); return next; })} style={{ margin: 0 }} /></span>
-                      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
-                      <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{organizationSiteGroupLabel(r)}</span>
-                      <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{masterOwnerDisplay(r)}</span>
-                      <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{userEmail(r.created_by_user_id)}</span>
-                      <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatDate(r.created_at)}</span>
-                      <div style={s.actions}>
-                        <button type="button" style={s.iconBtn} onClick={() => navigate('/inventory/tokens', { state: { organizationId: r.id } })} title="Generate Token">
-                          <IconKey size={16} />
-                        </button>
-                        <button type="button" style={s.iconBtn} onClick={() => handleEdit(r)} title="Edit">
-                          <IconEdit size={16} />
-                        </button>
-                        <button type="button" style={s.iconBtn} onClick={() => handleDelete(r.id)} title="Delete">
-                          <IconTrash size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={s.ticketList}>
-                  {records.map((r) => (
-                    <div key={r.id} ref={(el) => { if (el) searchScrollRefs.current[String(r.id)] = el; }} style={{ ...s.ticketCard, ...(currentMatchId === String(r.id) ? { backgroundColor: '#fef3c7', borderLeft: '6px solid #b45309', boxShadow: '0 0 0 2px #d97706', color: '#000' } : {}) }}>
-                      <div style={s.ticketMain}>
-                        <strong>{r.name}</strong>
-                        <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>
-                          Site group: {organizationSiteGroupLabel(r)}
-                        </span>
-                        <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>Master Owner: {masterOwnerDisplay(r)}</span>
-                        <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>Created by: {userEmail(r.created_by_user_id)}</span>
-                        <span style={{ color: t.color.textMuted, fontSize: t.fontSize.sm }}>Created on: {formatDate(r.created_at)}</span>
-                      </div>
-                      <div style={s.actions}>
-                        <button type="button" style={s.iconBtn} onClick={() => navigate('/inventory/tokens', { state: { organizationId: r.id } })} title="Generate Token">
-                          <IconKey size={16} />
-                        </button>
-                        <button type="button" style={s.iconBtn} onClick={() => handleEdit(r)} title="Edit">
-                          <IconEdit size={16} />
-                        </button>
-                        <button type="button" style={s.iconBtn} onClick={() => handleDelete(r.id)} title="Delete">
-                          <IconTrash size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <SiteManagementSites
+                groups={groups}
+                records={records}
+                users={users}
+                s={s}
+                t={t}
+                viewMode={viewMode}
+                setViewMode={setViewMode}
+                sortKeySite={sortKeySite}
+                setSortKeySite={setSortKeySite}
+                sortDirSite={sortDirSite}
+                setSortDirSite={setSortDirSite}
+                sortedRecords={sortedRecords}
+                selectedSiteIds={selectedSiteIds}
+                setSelectedSiteIds={setSelectedSiteIds}
+                searchScrollRefs={searchScrollRefs}
+                currentMatchId={currentMatchId}
+                getGroupPathLabel={getGroupPathLabel}
+                hasNoGroup={hasNoGroup}
+                organizationSiteGroupLabel={organizationSiteGroupLabel}
+                masterOwnerDisplay={masterOwnerDisplay}
+                userEmail={userEmail}
+                formatDate={formatDate}
+                defaultGroupId={defaultGroupId}
+                handleEdit={handleEdit}
+                handleDelete={handleDelete}
+                handleEditGroup={handleEditGroup}
+                handleDeleteGroup={handleDeleteGroup}
+                setForm={setForm}
+                onDeleteSelectedSites={onDeleteSelectedSites}
+              />
             </div>
           </div>
         )}
@@ -1801,6 +975,91 @@ const nodeW = 170;
                   <button type="button" style={{ ...s.btn, ...s.btnSecondary }} onClick={() => { setAddPanelOpen(false); }}>Close</button>
                 </div>
               </form>
+            )}
+          </div>
+        </RightSlidePanel>
+      )}
+
+      {importPanelOpen && (
+        <RightSlidePanel
+          theme={t}
+          onClose={() => { setImportPanelOpen(false); setImportCsvHeaders([]); setImportCsvRows([]); setImportDuplicates([]); }}
+          title={activeTab === 'group' ? 'Import site groups from CSV' : 'Import sites from CSV'}
+          headerStyle={{
+            padding: '16px 20px',
+            borderBottom: `1px solid ${t.color.border}`,
+            background: t.widgetHeader?.background || t.color.background,
+            color: t.widgetHeader?.color || t.color.text,
+          }}
+          titleStyle={{ margin: 0, fontSize: t.fontSize.lg, fontWeight: 600 }}
+        >
+          <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={s.formRow}>
+              <label style={s.label}>CSV file</label>
+              <input type="file" accept=".csv" onChange={handleImportFile} style={{ ...s.input, maxWidth: 320 }} />
+            </div>
+            {importCsvHeaders.length > 0 && (
+              <>
+                <p style={{ margin: 0, fontSize: t.fontSize.sm, color: t.color.textMuted }}>
+                  Map CSV columns to fields. Rows: {importCsvRows.length}. Headers: {importCsvHeaders.join(', ')}
+                </p>
+                <div style={s.formRow}>
+                  <label style={s.label}>Name (required)</label>
+                  <select
+                    value={importMapping.name ?? ''}
+                    onChange={(e) => setImportMapping((m) => ({ ...m, name: e.target.value }))}
+                    style={s.select}
+                  >
+                    <option value="">— Select column —</option>
+                    {importCsvHeaders.map((h, i) => (
+                      <option key={i} value={String(i)}>{h || `Column ${i + 1}`}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={s.formRow}>
+                  <label style={s.label}>{activeTab === 'group' ? 'Parent group (required)' : 'Site group (required)'}</label>
+                  <select
+                    value={importMapping[activeTab === 'group' ? 'parent_group' : 'site_group'] ?? ''}
+                    onChange={(e) => setImportMapping((m) => ({ ...m, [activeTab === 'group' ? 'parent_group' : 'site_group']: e.target.value }))}
+                    style={s.select}
+                  >
+                    <option value="">— Select column —</option>
+                    {importCsvHeaders.map((h, i) => (
+                      <option key={i} value={String(i)}>{h || `Column ${i + 1}`}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" style={{ ...s.btn, ...s.btnSecondary }} onClick={runDuplicateCheck} disabled={importMapping.name == null || importMapping[activeTab === 'group' ? 'parent_group' : 'site_group'] == null}>
+                    Check duplicates
+                  </button>
+                  <button type="button" style={{ ...s.btn, ...s.btnPrimary }} onClick={runImport} disabled={importBusy || importCsvRows.length === 0}>
+                    {importBusy ? 'Importing…' : 'Skip duplicates and import rest'}
+                  </button>
+                </div>
+                {importDuplicates.length > 0 && (
+                  <div style={{ padding: 12, background: t.color.surface, borderRadius: 8, border: `1px solid ${t.color.border}` }}>
+                    <p style={{ margin: '0 0 8px 0', fontWeight: 600, color: t.color.text }}>
+                      {importDuplicates.length} duplicate(s) will be skipped
+                    </p>
+                    <ul style={{ margin: 0, paddingLeft: 20, fontSize: t.fontSize.sm, color: t.color.textMuted, maxHeight: 120, overflow: 'auto' }}>
+                      {importDuplicates.slice(0, 20).map((d, i) => (
+                        <li key={i}>{d.name} ({activeTab === 'group' ? 'Parent' : 'Group'}: {d.parent})</li>
+                      ))}
+                      {importDuplicates.length > 20 && <li>… and {importDuplicates.length - 20} more</li>}
+                    </ul>
+                  </div>
+                )}
+                {(importResult.created > 0 || importResult.failed > 0) && (
+                  <p style={{ margin: 0, fontSize: t.fontSize.sm, color: t.color.textMuted }}>
+                    Imported: {importResult.created}. Skipped (duplicates): {importResult.skipped}. Failed: {importResult.failed}.
+                    {importResult.errors.length > 0 && ` First error: ${importResult.errors[0]?.message ?? ''}`}
+                  </p>
+                )}
+              </>
+            )}
+            {importCsvHeaders.length === 0 && (
+              <p style={{ margin: 0, fontSize: t.fontSize.sm, color: t.color.textMuted }}>Choose a CSV file to import. Required columns: Name, {activeTab === 'group' ? 'Parent group' : 'Site group'}.</p>
             )}
           </div>
         </RightSlidePanel>

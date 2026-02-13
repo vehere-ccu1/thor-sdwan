@@ -104,13 +104,19 @@ API_PREFIX = _get("api_prefix", "API_PREFIX", "/sdwan_cms_api")
 # Handshaking: GUI sends SHA256(handshaking_token + random_number) and random_number; API validates.
 HANDSHAKING_TOKEN = os.environ.get("HANDSHAKING_TOKEN") or str(_load_config_json().get("handshaking_token", ""))
 
-# DB: unified keys (db_type, db_host, db_port, db_name, db_user, db_password)
+# DB: unified keys (db_type, db_host, db_port, db_name, db_user, db_password); db_scheme for ES (http/https)
 DB_TYPE = (os.environ.get("DB_TYPE") or _get("db_type", "DB_TYPE", "clickhouse")).strip().lower() or "clickhouse"
 DB_HOST = _get("db_host", "DB_HOST", "localhost")
 DB_PORT = _get_int("db_port", "DB_PORT", 9000)
 DB_NAME = _get("db_name", "DB_NAME", "sdwan_cms")
 DB_USER = _get("db_user", "DB_USER", "default")
 DB_PASSWORD = os.environ.get("DB_PASSWORD") or _get("db_password", "DB_PASSWORD", "")
+DB_SCHEME = (os.environ.get("DB_SCHEME") or _get("db_scheme", "DB_SCHEME", "http")).strip().lower() or "http"
+# For Elasticsearch HTTPS: set db_verify_ssl to false to accept self-signed certs (dev only)
+_verify_ssl = os.environ.get("DB_VERIFY_SSL")
+if _verify_ssl is None:
+    _verify_ssl = str(_load_config_json().get("db_verify_ssl", "true")).strip().lower()
+DB_VERIFY_SSL = _verify_ssl not in ("false", "0", "no", "off")
 
 # Backward compat for code that still uses CLICKHOUSE_* (same as db_* when db_type=clickhouse)
 CLICKHOUSE_HOST = DB_HOST

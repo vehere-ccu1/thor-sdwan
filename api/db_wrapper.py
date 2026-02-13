@@ -105,11 +105,13 @@ class ElasticsearchBackend(BaseDBBackend):
     ) -> tuple[bool, str]:
         try:
             from elasticsearch import Elasticsearch
-            es = Elasticsearch(
-                [{"host": host, "port": port}],
-                basic_auth=(user, password) if (user or password) else None,
-                request_timeout=_TEST_TIMEOUT_SEC,
-            )
+            scheme = (kwargs.get("scheme") or "http").strip().lower() or "http"
+            url = f"{scheme}://{host}:{port}"
+            # 7.x API: hosts list, http_auth, verify_certs (plain application/json, no 406)
+            conn_kwargs = {"verify_certs": kwargs.get("verify_ssl", True), "timeout": _TEST_TIMEOUT_SEC}
+            if user or password:
+                conn_kwargs["http_auth"] = (user or "", password or "")
+            es = Elasticsearch([url], **conn_kwargs)
             if not es.ping():
                 return False, "Ping failed"
             return True, "OK"
@@ -214,7 +216,11 @@ def test_db_connection(
 def check_current_db_health() -> tuple[bool, str]:
     """Test connectivity to the DB configured in config (db_type, db_host, etc.). Returns (success, message)."""
     try:
-        from config import DB_HOST, DB_NAME, DB_PASSWORD, DB_PORT, DB_TYPE, DB_USER
+        from config import DB_HOST, DB_NAME, DB_PASSWORD, DB_PORT, DB_SCHEME, DB_TYPE, DB_USER, DB_VERIFY_SSL
+        kwargs = {}
+        if DB_TYPE == "elasticsearch":
+            kwargs["scheme"] = DB_SCHEME
+            kwargs["verify_ssl"] = DB_VERIFY_SSL
         return test_db_connection(
             db_type=DB_TYPE,
             host=DB_HOST,
@@ -222,6 +228,7 @@ def check_current_db_health() -> tuple[bool, str]:
             user=DB_USER,
             password=DB_PASSWORD,
             database=DB_NAME,
+            **kwargs,
         )
     except Exception as e:
         return False, str(e)

@@ -46,8 +46,8 @@ CREATE TABLE IF NOT EXISTS accounts (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
--- Groups
-CREATE TABLE IF NOT EXISTS groups (
+-- Groups (backticks: groups is a MySQL reserved word)
+CREATE TABLE IF NOT EXISTS `groups` (
     id CHAR(36) PRIMARY KEY,
     account_id CHAR(36),
     name VARCHAR(255),
@@ -161,3 +161,54 @@ CREATE TABLE IF NOT EXISTS firewall_rules (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
+
+-- Views (equivalent to ClickHouse users_with_roles, sites_with_account, user_permissions_final)
+DROP VIEW IF EXISTS users_with_roles;
+CREATE VIEW users_with_roles AS
+SELECT
+    u.id,
+    u.email,
+    u.name,
+    u.job_title,
+    u.account_id,
+    u.entity_id,
+    u.is_owner,
+    u.enabled,
+    u.created_at,
+    u.updated_at,
+    r.name AS role_name,
+    r.permissions,
+    a.billing_email AS account_billing_email,
+    u.master_owner_user_id,
+    u.created_by_user_id,
+    u.organizations,
+    u.organization_group_ids
+FROM users u
+LEFT JOIN roles r ON u.role_id = r.id
+LEFT JOIN accounts a ON u.account_id = a.id;
+
+DROP VIEW IF EXISTS sites_with_account;
+CREATE VIEW sites_with_account AS
+SELECT
+    o.id,
+    o.account_id,
+    o.group_id,
+    o.name,
+    o.group_name,
+    o.tunnel_key_exchange,
+    o.is_default,
+    o.created_at,
+    o.updated_at,
+    COALESCE(NULLIF(o.master_owner_user_id, '00000000-0000-0000-0000-000000000000'), a.master_owner_user_id) AS master_owner_user_id,
+    o.created_by_user_id,
+    a.billing_email AS account_billing_email,
+    g.name AS group_name_resolved
+FROM sites o
+LEFT JOIN accounts a ON o.account_id = a.id
+LEFT JOIN `groups` g ON o.group_id = g.id;
+
+DROP VIEW IF EXISTS user_permissions_final;
+CREATE VIEW user_permissions_final AS
+SELECT id, user_id, permission_to, entity_id, entity_name, role, created_at, updated_at
+FROM user_permissions
+WHERE deleted = 0;

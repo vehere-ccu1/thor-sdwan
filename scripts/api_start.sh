@@ -89,6 +89,77 @@ except Exception as e:
   fi
 }
 
+# Load default values for DB/config prompts: from config file if it exists, else hardcoded.
+load_prompt_defaults() {
+  if [ ! -f "$CONFIG_PATH" ]; then
+    DEFAULT_DB_TYPE="clickhouse"
+    DEFAULT_DB_HOST="localhost"
+    DEFAULT_DB_PORT="9000"
+    DEFAULT_DB_NAME="sdwan_cms"
+    DEFAULT_DB_USER="default"
+    DEFAULT_DB_PASSWORD=""
+    DEFAULT_API_HOST="0.0.0.0"
+    DEFAULT_API_PORT="3443"
+    return
+  fi
+  CONFIG_DEFAULTS=$("$PYTHON" -c "
+import json
+import os
+p = os.environ.get('CONFIG_PATH', 'resource/config.json')
+hard = {
+    'db_type': 'clickhouse',
+    'db_host': 'localhost',
+    'db_port': '9000',
+    'db_name': 'sdwan_cms',
+    'db_user': 'default',
+    'db_password': '',
+    'api_host': '0.0.0.0',
+    'api_port': '3443',
+}
+try:
+    with open(p, encoding='utf-8') as f:
+        c = json.load(f)
+    for k in hard:
+        if k in c and c[k] is not None:
+            v = c[k]
+            if k in ('api_port', 'db_port'):
+                try:
+                    v = int(v)
+                except (TypeError, ValueError):
+                    v = hard[k]
+            hard[k] = v
+        if hard[k] is None or (isinstance(hard[k], str) and hard[k].strip() == '' and k != 'db_password'):
+            hard[k] = {'db_type': 'clickhouse', 'db_host': 'localhost', 'db_port': 9000, 'db_name': 'sdwan_cms', 'db_user': 'default', 'db_password': '', 'api_host': '0.0.0.0', 'api_port': 3443}[k]
+except Exception:
+    pass
+for k in ['db_type', 'db_host', 'db_port', 'db_name', 'db_user', 'db_password', 'api_host', 'api_port']:
+    print(k + '=' + str(hard.get(k, '')))
+" 2>/dev/null)
+  if [ -n "$CONFIG_DEFAULTS" ]; then
+    while IFS= read -r line; do
+      case "$line" in
+        db_type=*) DEFAULT_DB_TYPE="${line#*=}";;
+        db_host=*) DEFAULT_DB_HOST="${line#*=}";;
+        db_port=*) DEFAULT_DB_PORT="${line#*=}";;
+        db_name=*) DEFAULT_DB_NAME="${line#*=}";;
+        db_user=*) DEFAULT_DB_USER="${line#*=}";;
+        db_password=*) DEFAULT_DB_PASSWORD="${line#*=}";;
+        api_host=*) DEFAULT_API_HOST="${line#*=}";;
+        api_port=*) DEFAULT_API_PORT="${line#*=}";;
+      esac
+    done <<< "$CONFIG_DEFAULTS"
+  else
+    DEFAULT_DB_TYPE="clickhouse"
+    DEFAULT_DB_HOST="localhost"
+    DEFAULT_DB_PORT="9000"
+    DEFAULT_DB_NAME="sdwan_cms"
+    DEFAULT_DB_USER="default"
+    DEFAULT_DB_PASSWORD=""
+    DEFAULT_API_HOST="0.0.0.0"
+    DEFAULT_API_PORT="3443"
+  fi
+}
+
 ensure_config_and_db() {
   while true; do
     if check_config_and_db; then
@@ -98,22 +169,24 @@ ensure_config_and_db() {
       echo "Config or DB check failed (non-interactive). Fix api/resource/config.json and re-run." >&2
       exit 1
     fi
+    export CONFIG_PATH
+    load_prompt_defaults
     echo ""
     echo "API config or DB check failed. Provide values to create/update api/resource/config.json"
     echo "Press Enter to accept [default]."
-    read -r -p "db_type [clickhouse]: " IN_DB_TYPE; IN_DB_TYPE=${IN_DB_TYPE:-clickhouse}
-    read -r -p "db_host [localhost]: " IN_DB_HOST; IN_DB_HOST=${IN_DB_HOST:-localhost}
-    read -r -p "db_port [9000]: " IN_DB_PORT; IN_DB_PORT=${IN_DB_PORT:-9000}
-    read -r -p "db_name [sdwan_cms]: " IN_DB_NAME; IN_DB_NAME=${IN_DB_NAME:-sdwan_cms}
-    read -r -p "db_user [default]: " IN_DB_USER; IN_DB_USER=${IN_DB_USER:-default}
-    read -r -p "db_password (optional): " IN_DB_PASSWORD
-    read -r -p "api_host [0.0.0.0]: " IN_API_HOST; IN_API_HOST=${IN_API_HOST:-0.0.0.0}
-    read -r -p "api_port [3443]: " IN_API_PORT; IN_API_PORT=${IN_API_PORT:-3443}
+    read -r -p "db_type [${DEFAULT_DB_TYPE}]: " IN_DB_TYPE; IN_DB_TYPE=${IN_DB_TYPE:-$DEFAULT_DB_TYPE}
+    read -r -p "db_host [${DEFAULT_DB_HOST}]: " IN_DB_HOST; IN_DB_HOST=${IN_DB_HOST:-$DEFAULT_DB_HOST}
+    read -r -p "db_port [${DEFAULT_DB_PORT}]: " IN_DB_PORT; IN_DB_PORT=${IN_DB_PORT:-$DEFAULT_DB_PORT}
+    read -r -p "db_name [${DEFAULT_DB_NAME}]: " IN_DB_NAME; IN_DB_NAME=${IN_DB_NAME:-$DEFAULT_DB_NAME}
+    read -r -p "db_user [${DEFAULT_DB_USER}]: " IN_DB_USER; IN_DB_USER=${IN_DB_USER:-$DEFAULT_DB_USER}
+    read -r -p "db_password (optional): " IN_DB_PASSWORD; IN_DB_PASSWORD=${IN_DB_PASSWORD:-$DEFAULT_DB_PASSWORD}
+    read -r -p "api_host [${DEFAULT_API_HOST}]: " IN_API_HOST; IN_API_HOST=${IN_API_HOST:-$DEFAULT_API_HOST}
+    read -r -p "api_port [${DEFAULT_API_PORT}]: " IN_API_PORT; IN_API_PORT=${IN_API_PORT:-$DEFAULT_API_PORT}
     export CONFIG_PATH="$CONFIG_PATH"
-    IN_DB_TYPE="${IN_DB_TYPE:-clickhouse}" IN_DB_HOST="${IN_DB_HOST:-localhost}" \
-    IN_DB_PORT="${IN_DB_PORT:-9000}" IN_DB_NAME="${IN_DB_NAME:-sdwan_cms}" \
-    IN_DB_USER="${IN_DB_USER:-default}" IN_DB_PASSWORD="${IN_DB_PASSWORD:-}" \
-    IN_API_HOST="${IN_API_HOST:-0.0.0.0}" IN_API_PORT="${IN_API_PORT:-3443}" \
+    IN_DB_TYPE="${IN_DB_TYPE:-$DEFAULT_DB_TYPE}" IN_DB_HOST="${IN_DB_HOST:-$DEFAULT_DB_HOST}" \
+    IN_DB_PORT="${IN_DB_PORT:-$DEFAULT_DB_PORT}" IN_DB_NAME="${IN_DB_NAME:-$DEFAULT_DB_NAME}" \
+    IN_DB_USER="${IN_DB_USER:-$DEFAULT_DB_USER}" IN_DB_PASSWORD="${IN_DB_PASSWORD:-$DEFAULT_DB_PASSWORD}" \
+    IN_API_HOST="${IN_API_HOST:-$DEFAULT_API_HOST}" IN_API_PORT="${IN_API_PORT:-$DEFAULT_API_PORT}" \
     "$PYTHON" -c "
 import json
 import os

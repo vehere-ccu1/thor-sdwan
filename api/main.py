@@ -17,6 +17,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import API_PREFIX, DB_TYPE, HANDSHAKING_TOKEN, LOG_PATH
+from db import UnsupportedBackendError
 from db_wrapper import check_current_db_health
 from schema_sync import ensure_schema
 
@@ -68,15 +69,54 @@ class HandshakingMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+# Explicit origins so CORS works with credentials (allow_origins=["*"] is invalid with allow_credentials=True).
+CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://[::1]:5173",
+    "http://localhost:3443",
+    "http://127.0.0.1:3443",
+]
+
 app = FastAPI(title="Thor SD-WAN CMS API", version="1.0.0")
 app.add_middleware(HandshakingMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+
+def _cors_headers(request: Request) -> dict:
+    """Return CORS headers for error responses so browser does not block (e.g. on 500)."""
+    origin = request.headers.get("origin", "")
+    if origin in CORS_ORIGINS:
+        return {"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Credentials": "true"}
+    return {}
+
+
+@app.exception_handler(UnsupportedBackendError)
+def unsupported_backend_handler(request: Request, exc: UnsupportedBackendError):
+    """Return 503 when db_type is not supported for app data."""
+    return JSONResponse(
+        status_code=503,
+        content={"detail": str(exc)},
+        headers=_cors_headers(request),
+    )
+
+
+@app.exception_handler(Exception)
+def generic_exception_handler(request: Request, exc: Exception):
+    """Return 500 with CORS headers so the browser receives a proper response."""
+    logger.exception("Unhandled exception: %s", exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc)},
+        headers=_cors_headers(request),
+    )
 
 
 @app.on_event("startup")

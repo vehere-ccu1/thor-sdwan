@@ -6,9 +6,15 @@ clickhouse-driver>=0.2.6
 fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
 
-# Optional: for config-dialog DB connectivity test (TEST-DB) when using non-ClickHouse types
-# pip install pymysql elasticsearch pymongo oracledb
-# pymysql>=1.1.0
-# elasticsearch>=8.0.0
-# pymongo>=4.0.0
+# Optional: for MongoDB schema sync and DB connectivity test when db_type=mongodb
+pymongo>=4.0.0
+
+# Optional: for MySQL and Elasticsearch (schema sync, app data when db_type=mysql / db_type=elasticsearch)
+pymysql>=1.1.0
+# Required by PyMySQL for sha256_password / caching_sha2_password auth
+cryptography>=41.0.0
+# Pin to 7.13.x: uses plain application/json (no 406); <7.14 avoids UnsupportedProductError
+# so OpenSearch and ES OSS work. 8.x/9.x send compatible-with header (406).
+elasticsearch>=7.0.0,<7.14
+# Optional: for Oracle (config-dialog TEST-DB only): pip install oracledb
 # oracledb>=2.0.0

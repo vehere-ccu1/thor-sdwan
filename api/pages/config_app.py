@@ -18,7 +18,7 @@ from db_wrapper import test_db_connection
 
 router = APIRouter()
 
-# Keys that the GUI may read and update (unified: db_type, db_host, db_port, db_name, db_user, db_password)
+# Keys that the GUI may read and update (unified: db_type, db_host, db_port, db_name, db_user, db_password; db_scheme for ES)
 CONFIG_KEYS = {
     "api_host",
     "api_port",
@@ -30,6 +30,8 @@ CONFIG_KEYS = {
     "db_name",
     "db_user",
     "db_password",
+    "db_scheme",
+    "db_verify_ssl",
     "product",
     "company",
     "audit_log_retention_in_days",
@@ -119,6 +121,12 @@ def config_test_db(body: dict):
     user = str(body.get("user", "")).strip()
     password = str(body.get("password", "")).strip()
     database = str(body.get("db_name") or body.get("database", "")).strip()
+    kwargs = {}
+    if db_type == "elasticsearch":
+        scheme = str(body.get("db_scheme") or body.get("scheme", "http")).strip().lower() or "http"
+        kwargs["scheme"] = scheme
+        verify = body.get("db_verify_ssl", True)
+        kwargs["verify_ssl"] = verify not in (False, "false", "0", "no", "off")
     ok, msg = test_db_connection(
         db_type=db_type,
         host=host,
@@ -126,6 +134,7 @@ def config_test_db(body: dict):
         user=user,
         password=password,
         database=database,
+        **kwargs,
     )
     if ok:
         return {"ok": True, "message": msg}

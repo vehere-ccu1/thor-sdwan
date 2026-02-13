@@ -13,14 +13,22 @@ import sys
 _TIMEOUT = 5
 
 
-def test_connection(host: str, port: int, user: str = "", password: str = "", database: str = "") -> tuple[bool, str]:
+def test_connection(
+    host: str,
+    port: int,
+    user: str = "",
+    password: str = "",
+    database: str = "",
+    scheme: str = "http",
+    verify_certs: bool = True,
+) -> tuple[bool, str]:
     try:
         from elasticsearch import Elasticsearch
-        es = Elasticsearch(
-            [{"host": host, "port": port}],
-            basic_auth=(user, password) if (user or password) else None,
-            request_timeout=_TIMEOUT,
-        )
+        url = f"{scheme}://{host}:{port}"
+        kwargs = {"timeout": _TIMEOUT, "verify_certs": verify_certs}
+        if user or password:
+            kwargs["http_auth"] = (user or "", password or "")
+        es = Elasticsearch([url], **kwargs)
         if not es.ping():
             return False, "Ping failed"
         return True, "OK"
@@ -40,6 +48,8 @@ def main() -> int:
     ap.add_argument("--database", default="", help="Unused for ES")
     args = ap.parse_args()
 
+    scheme = "http"
+    verify_certs = True
     if args.config:
         try:
             with open(args.config, encoding="utf-8") as f:
@@ -48,6 +58,9 @@ def main() -> int:
             port = int(c.get("db_port", 9200))
             user = str(c.get("db_user", ""))
             password = str(c.get("db_password", ""))
+            scheme = str(c.get("db_scheme", "http")).strip().lower() or "http"
+            v = c.get("db_verify_ssl", True)
+            verify_certs = v not in (False, "false", "0", "no", "off")
         except FileNotFoundError:
             print("CONFIG_MISSING", file=sys.stderr)
             return 1
@@ -60,7 +73,15 @@ def main() -> int:
         user = args.user
         password = args.password
 
-    ok, msg = test_connection(host=host, port=port, user=user, password=password, database=args.database)
+    ok, msg = test_connection(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        database=args.database,
+        scheme=scheme,
+        verify_certs=verify_certs,
+    )
     if not ok:
         print("DB_HEALTH_FAIL:", msg, file=sys.stderr)
         return 1

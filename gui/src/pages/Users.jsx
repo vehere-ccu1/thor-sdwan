@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { getDataPageStyles } from '../styles/dataPageStyles';
-import { IconEdit, IconTrash, IconBlocked, IconCheck, IconInfo, IconGrid, IconTicket, IconLink, IconPlus, IconMinus } from '../components/Icons';
+import { IconEdit, IconTrash, IconBlocked, IconCheck, IconInfo, IconGrid, IconTicket, IconLink, IconPlus, IconMinus, IconExport, IconImport } from '../components/Icons';
 import {
   fetchAccounts,
   fetchGroups,
@@ -255,6 +255,13 @@ export default function Users() {
   const [panning, setPanning] = useState(false);
   const panStartRef = useRef(null);
   const hasCenteredGraphRef = useRef(false);
+  const [importPanelOpen, setImportPanelOpen] = useState(false);
+  const [importCsvHeaders, setImportCsvHeaders] = useState([]);
+  const [importCsvRows, setImportCsvRows] = useState([]);
+  const [importMapping, setImportMapping] = useState({});
+  const [importDuplicates, setImportDuplicates] = useState([]);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importResult, setImportResult] = useState({ created: 0, skipped: 0, failed: 0, errors: [] });
 
   const resetForm = () => {
     setForm({
@@ -819,6 +826,159 @@ export default function Users() {
       return (va < vb ? -1 : va > vb ? 1 : 0) * dir;
     });
   }, [records, sortKey, sortDir, accounts, organizations, groups]);
+
+  function parseCSVLine(line) {
+    const result = [];
+    let i = 0;
+    while (i < line.length) {
+      if (line[i] === '"') {
+        i++;
+        let cell = '';
+        while (i < line.length) {
+          if (line[i] === '"' && line[i + 1] === '"') { cell += '"'; i += 2; }
+          else if (line[i] === '"') { i++; break; }
+          else { cell += line[i++]; }
+        }
+        result.push(cell);
+        while (i < line.length && (line[i] === ',' || line[i] === ' ')) i++;
+      } else {
+        let cell = '';
+        while (i < line.length && line[i] !== ',') cell += line[i++];
+        result.push(cell.trim());
+        if (line[i] === ',') i++;
+      }
+    }
+    return result;
+  }
+  function parseCSV(text) {
+    const lines = text.split(/\r?\n/).filter(Boolean);
+    if (!lines.length) return { headers: [], rows: [] };
+    const headers = parseCSVLine(lines[0]);
+    const rows = lines.slice(1).map((l) => parseCSVLine(l));
+    return { headers, rows };
+  }
+  const escapeCsv = (v) => {
+    const s = String(v ?? '');
+    if (s.includes(',') || s.includes('"') || s.includes('\n')) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  };
+  const exportUsersCSV = () => {
+    const headers = ['Name', 'Email', 'Job Title', 'Account', 'Role', 'Created By', 'Created On'];
+    const rows = sortedRecords.map((r) => [
+      escapeCsv(r.name),
+      escapeCsv(r.email),
+      escapeCsv(r.job_title),
+      escapeCsv(accountName(r.account_id)),
+      escapeCsv(r.is_owner ? 'Owner' : (r.role_name || 'Manager')),
+      escapeCsv(userLabel(r.created_by_user_id)),
+      escapeCsv(formatDate(r.created_at)),
+    ]);
+    const csv = '\uFEFF' + [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `users-${currentAccountId || 'export'}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const openImportPanel = () => {
+    setImportCsvHeaders([]);
+    setImportCsvRows([]);
+    setImportMapping({});
+    setImportDuplicates([]);
+    setImportResult({ created: 0, skipped: 0, failed: 0, errors: [] });
+    setImportPanelOpen(true);
+  };
+  const handleImportFile = (e) => {
+    const file = e?.target?.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const { headers, rows } = parseCSV(ev.target?.result ?? '');
+        setImportCsvHeaders(headers);
+        setImportCsvRows(rows);
+        const mapping = {};
+        if (headers.length > 0) mapping.email = String(0);
+        if (headers.length > 1) mapping.name = String(1);
+        if (headers.length > 2) mapping.job_title = String(2);
+        if (headers.length > 3) mapping.role = String(3);
+        setImportMapping(mapping);
+        setImportDuplicates([]);
+        setImportResult({ created: 0, skipped: 0, failed: 0, errors: [] });
+      } catch (err) {
+        console.error(err);
+        setImportCsvHeaders([]);
+        setImportCsvRows([]);
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+    e.target.value = '';
+  };
+  const runDuplicateCheck = () => {
+    const emailIdx = importMapping.email != null ? parseInt(importMapping.email, 10) : null;
+    if (emailIdx == null) return;
+    const existingEmails = new Set(records.map((r) => (r.email || '').trim().toLowerCase()));
+    const duplicates = [];
+    importCsvRows.forEach((row, i) => {
+      const email = (row[emailIdx] ?? '').trim().toLowerCase();
+      if (email && existingEmails.has(email)) duplicates.push({ index: i, email: row[emailIdx] });
+    });
+    setImportDuplicates(duplicates);
+  };
+  const runImport = async () => {
+    const emailIdx = importMapping.email != null ? parseInt(importMapping.email, 10) : null;
+    const nameIdx = importMapping.name != null ? parseInt(importMapping.name, 10) : 0;
+    const jobTitleIdx = importMapping.job_title != null ? parseInt(importMapping.job_title, 10) : -1;
+    const roleIdx = importMapping.role != null ? parseInt(importMapping.role, 10) : -1;
+    if (emailIdx == null) return;
+    const duplicateSet = new Set(importDuplicates.map((d) => d.index));
+    const toImport = importCsvRows
+      .map((row, i) => ({ row, i }))
+      .filter(({ i }) => !duplicateSet.has(i))
+      .map(({ row }) => ({
+        email: (row[emailIdx] ?? '').trim(),
+        name: (row[nameIdx] ?? '').trim(),
+        job_title: jobTitleIdx >= 0 ? (row[jobTitleIdx] ?? '').trim() : '',
+        role: roleIdx >= 0 ? (row[roleIdx] ?? '').trim().toLowerCase() : 'viewer',
+      }));
+    let created = 0;
+    const errors = [];
+    setImportBusy(true);
+    setImportResult({ created: 0, skipped: importDuplicates.length, failed: 0, errors: [] });
+    try {
+      const accountId = currentAccountId;
+      if (!accountId) {
+        setImportResult({ created: 0, skipped: importDuplicates.length, failed: toImport.length, errors: [{ message: 'No account selected' }] });
+        return;
+      }
+      for (const u of toImport) {
+        if (!u.email) continue;
+        try {
+          const role = ['owner', 'manager', 'viewer'].includes(u.role) ? u.role : 'viewer';
+          await createUser({
+            account_id: accountId,
+            email: u.email,
+            name: u.name || u.email,
+            job_title: (u.job_title || '').trim() || '—',
+            role,
+            is_owner: role === 'owner',
+            enabled: true,
+            organizations: [],
+            organization_group_ids: [],
+          });
+          created++;
+        } catch (err) {
+          errors.push({ email: u.email, message: err?.message || String(err) });
+        }
+      }
+      setImportResult({ created, skipped: importDuplicates.length, failed: errors.length, errors });
+      if (created > 0) fetchUsers(currentAccountId).then((list) => setRecords(Array.isArray(list) ? list : []));
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
   const editingRecord = editingId ? records.find((r) => r.id === editingId) : null;
   const isEditingMasterOwner = editingRecord?.is_owner === true;
   const searchWord = searchQuery.trim().toLowerCase();
@@ -911,6 +1071,12 @@ export default function Users() {
             aria-label="Link view"
           >
             <IconLink size={16} />
+          </button>
+          <button type="button" style={s.iconBtn} onClick={exportUsersCSV} title="Export to CSV" aria-label="Export to CSV">
+            <IconExport size={16} />
+          </button>
+          <button type="button" style={s.iconBtn} onClick={openImportPanel} title="Import from CSV" aria-label="Import from CSV">
+            <IconImport size={16} />
           </button>
           <button
             type="button"
@@ -1111,6 +1277,112 @@ export default function Users() {
           </form>
         </div>
       </RightSlidePanel>
+      )}
+
+      {importPanelOpen && (
+        <RightSlidePanel
+          theme={t}
+          onClose={() => { setImportPanelOpen(false); setImportCsvHeaders([]); setImportCsvRows([]); setImportDuplicates([]); }}
+          title="Import users from CSV"
+          headerStyle={userCard.header}
+          titleStyle={userCard.title}
+        >
+          <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={s.formRow}>
+              <label style={s.label}>CSV file</label>
+              <input type="file" accept=".csv" onChange={handleImportFile} style={{ ...s.input, maxWidth: 320 }} />
+            </div>
+            {importCsvHeaders.length > 0 && (
+              <>
+                <p style={{ margin: 0, fontSize: t.fontSize.sm, color: t.color.textMuted }}>
+                  Map CSV columns to fields. Rows: {importCsvRows.length}. Duplicates are determined by email.
+                </p>
+                <div style={s.formRow}>
+                  <label style={s.label}>Email (required)</label>
+                  <select
+                    value={importMapping.email ?? ''}
+                    onChange={(e) => setImportMapping((m) => ({ ...m, email: e.target.value }))}
+                    style={s.select}
+                  >
+                    <option value="">— Select column —</option>
+                    {importCsvHeaders.map((h, i) => (
+                      <option key={i} value={String(i)}>{h || `Column ${i + 1}`}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={s.formRow}>
+                  <label style={s.label}>Name (required)</label>
+                  <select
+                    value={importMapping.name ?? ''}
+                    onChange={(e) => setImportMapping((m) => ({ ...m, name: e.target.value }))}
+                    style={s.select}
+                  >
+                    <option value="">— Select column —</option>
+                    {importCsvHeaders.map((h, i) => (
+                      <option key={i} value={String(i)}>{h || `Column ${i + 1}`}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={s.formRow}>
+                  <label style={s.label}>Job title (optional)</label>
+                  <select
+                    value={importMapping.job_title ?? ''}
+                    onChange={(e) => setImportMapping((m) => ({ ...m, job_title: e.target.value }))}
+                    style={s.select}
+                  >
+                    <option value="">— None —</option>
+                    {importCsvHeaders.map((h, i) => (
+                      <option key={i} value={String(i)}>{h || `Column ${i + 1}`}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={s.formRow}>
+                  <label style={s.label}>Role (optional: owner, manager, viewer)</label>
+                  <select
+                    value={importMapping.role ?? ''}
+                    onChange={(e) => setImportMapping((m) => ({ ...m, role: e.target.value }))}
+                    style={s.select}
+                  >
+                    <option value="">— None (default: viewer) —</option>
+                    {importCsvHeaders.map((h, i) => (
+                      <option key={i} value={String(i)}>{h || `Column ${i + 1}`}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" style={{ ...s.btn, ...s.btnSecondary }} onClick={runDuplicateCheck} disabled={importMapping.email == null}>
+                    Check duplicates
+                  </button>
+                  <button type="button" style={{ ...s.btn, ...s.btnPrimary }} onClick={runImport} disabled={importBusy || importCsvRows.length === 0}>
+                    {importBusy ? 'Importing…' : 'Skip duplicates and import rest'}
+                  </button>
+                </div>
+                {importDuplicates.length > 0 && (
+                  <div style={{ padding: 12, background: t.color.surface, borderRadius: 8, border: `1px solid ${t.color.border}` }}>
+                    <p style={{ margin: '0 0 8px 0', fontWeight: 600, color: t.color.text }}>
+                      {importDuplicates.length} duplicate(s) will be skipped (same email)
+                    </p>
+                    <ul style={{ margin: 0, paddingLeft: 20, fontSize: t.fontSize.sm, color: t.color.textMuted, maxHeight: 120, overflow: 'auto' }}>
+                      {importDuplicates.slice(0, 20).map((d, i) => (
+                        <li key={i}>{d.email}</li>
+                      ))}
+                      {importDuplicates.length > 20 && <li>… and {importDuplicates.length - 20} more</li>}
+                    </ul>
+                  </div>
+                )}
+                {(importResult.created > 0 || importResult.failed > 0) && (
+                  <p style={{ margin: 0, fontSize: t.fontSize.sm, color: t.color.textMuted }}>
+                    Imported: {importResult.created}. Skipped (duplicates): {importResult.skipped}. Failed: {importResult.failed}.
+                    {importResult.errors.length > 0 && ` First error: ${importResult.errors[0]?.message ?? ''}`}
+                  </p>
+                )}
+              </>
+            )}
+            {importCsvHeaders.length === 0 && (
+              <p style={{ margin: 0, fontSize: t.fontSize.sm, color: t.color.textMuted }}>Choose a CSV file. Required: Email, Name. Duplicates are identified by email.</p>
+            )}
+          </div>
+        </RightSlidePanel>
       )}
 
       <div style={{ flex: 1, minHeight: 0, overflow: viewMode === 'graph' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column' }}>
